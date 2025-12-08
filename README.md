@@ -17,6 +17,10 @@ Create magical galaxies using real-time hand tracking and stunning WebGL particl
 - **Big Bang Explosion** - Bring your hands close together to trigger a spectacular cosmic explosion
 - **Responsive & Optimized** - Runs smoothly at 60 FPS on modern devices
 
+
+https://github.com/user-attachments/assets/70340864-a81a-4012-8bae-8f440271bbf7
+
+
 ## 🚀 Quick Start
 
 ### Prerequisites
