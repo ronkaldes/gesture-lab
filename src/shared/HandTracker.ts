@@ -12,7 +12,7 @@ import {
 import {
   DEFAULT_HAND_TRACKER_CONFIG,
   type HandTrackerConfig,
-} from './types/HandTypes';
+} from './HandTypes';
 
 /**
  * HandTracker - Handles webcam initialization and MediaPipe hand detection

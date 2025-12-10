@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   // Development server configuration
   server: {
-    port: 3000,
+    port: 2501,
     open: true,
     // Required for camera access - HTTPS in development
     // Note: For production, ensure proper HTTPS is configured

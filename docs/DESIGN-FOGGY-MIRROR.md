@@ -177,7 +177,7 @@ function render() {
 
 ### 4.1 FoggyMirrorController
 
-**File:** `src/modules/FoggyMirrorController.ts`
+**File:** `src/foggy-mirror/FoggyMirrorController.ts`
 
 #### Configuration Interface
 
@@ -258,7 +258,7 @@ function startUpdateLoop() {
 
 ### 4.2 HandTrailTracker
 
-**File:** `src/modules/HandTrailTracker.ts`
+**File:** `src/shared/HandTrailTracker.ts`
 
 #### Configuration
 
@@ -383,7 +383,7 @@ trackedHands.set(handId, {
 
 ### 4.3 FogOverlay
 
-**File:** `src/modules/FogOverlay.ts`
+**File:** `src/foggy-mirror/FogOverlay.ts`
 
 #### Configuration
 

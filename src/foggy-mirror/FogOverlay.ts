@@ -7,7 +7,7 @@ import {
   FogOverlayConfig,
   DEFAULT_FOG_OVERLAY_CONFIG,
   TrailPoint,
-} from './types/FoggyMirrorTypes';
+} from './types';
 
 /**
  * FogOverlay manages a canvas element that overlays content with a fog effect

@@ -3,14 +3,14 @@
  * Coordinates HandTracker, BlurOverlay, and HandTrailTracker for seamless blur clearing
  */
 
-import type { HandTracker } from './HandTracker';
+import type { HandTracker } from '../shared/HandTracker';
 import { BlurOverlay } from './BlurOverlay';
-import { HandTrailTracker } from './HandTrailTracker';
+import { HandTrailTracker } from '../shared/HandTrailTracker';
 import {
   WipeToRevealConfig,
   DEFAULT_WIPE_TO_REVEAL_CONFIG,
   WipeToRevealState,
-} from './types/WipeToRevealTypes';
+} from './wipe-types';
 
 /**
  * WipeToRevealController manages the wipe-to-reveal interaction mode

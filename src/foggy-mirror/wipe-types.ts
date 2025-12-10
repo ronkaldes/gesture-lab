@@ -114,3 +114,15 @@ export type WipeToRevealState =
   | 'ready'
   | 'active'
   | 'disposed';
+
+/**
+ * Debug information for WipeToRevealController
+ */
+export interface WipeToRevealDebugInfo {
+  fps: number;
+  handsDetected: number;
+  trailPoints: number;
+  clearedPercentage: number;
+  avgVelocity: number;
+  avgBrushSize: number;
+}

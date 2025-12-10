@@ -26,7 +26,7 @@ import {
   BlendFunction,
   KernelSize,
 } from 'postprocessing';
-import { GravitationalLensingEffect } from './GravitationalLensingEffect';
+import { GravitationalLensingEffect } from '../interactive-galaxy/GravitationalLensingEffect';
 
 /**
  * Post-processing configuration

@@ -1,11 +1,20 @@
 /**
  * Main Entry Point
- * Interactive Galaxy Between Hands
+ * Gesture Lab
  */
 
 import { inject } from '@vercel/analytics';
 import { App } from './app';
 import './styles/main.css';
+
+// Import fonts
+import '@fontsource/nunito/200.css';
+import '@fontsource/nunito/300.css';
+import '@fontsource/nunito/400.css';
+import '@fontsource/nunito/600.css';
+import '@fontsource/nunito/700.css';
+import '@fontsource/playfair-display/400.css';
+import '@fontsource/playfair-display/700.css';
 
 // Initialize Vercel Analytics for deployment tracking
 inject();
@@ -31,26 +40,6 @@ app.start().catch((error) => {
 // Enable keyboard shortcuts
 document.addEventListener('keydown', (event) => {
   switch (event.key.toLowerCase()) {
-    case 'd':
-      // Toggle debug panel
-      app.toggleDebug();
-      break;
-    case 'h':
-      // Toggle controls hint
-      app.toggleControls();
-      break;
-    case 'g':
-      // Switch to galaxy mode
-      app.switchToGalaxyMode();
-      break;
-    case 'f':
-      // Switch to foggy mirror mode
-      app.switchToFoggyMirrorMode();
-      break;
-    case 'r':
-      // Reset foggy mirror
-      app.resetFoggyMirror();
-      break;
     case 'escape':
       // Clean up on Escape
       app.dispose();

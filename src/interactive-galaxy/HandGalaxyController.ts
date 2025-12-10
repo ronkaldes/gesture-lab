@@ -12,17 +12,17 @@ import {
   HandLandmarkerResult,
   NormalizedLandmark,
 } from '@mediapipe/tasks-vision';
-import { HandTracker } from './HandTracker';
+import { HandTracker } from '../shared/HandTracker';
 import { GalaxyRenderer } from './GalaxyRenderer';
-import { GestureDetector } from './GestureDetector';
+import { GestureDetector } from '../shared/GestureDetector';
 import { StarBurstEffect } from './StarBurstEffect';
-import { HandLandmarkIndex } from './types/HandTypes';
+import { HandLandmarkIndex } from '../shared/HandTypes';
 import {
   GestureState,
   Handedness,
   PinchGestureEvent,
-} from './types/GestureTypes';
-import { ExplosionState } from './types/GalaxyTypes';
+} from '../shared/GestureTypes';
+import { ExplosionState } from './types';
 import {
   distance3D,
   midpoint3D,

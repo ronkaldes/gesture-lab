@@ -10,7 +10,7 @@ import {
   Point2D,
   TrailPoint,
   TrackedHand,
-} from './types/FoggyMirrorTypes';
+} from '../foggy-mirror/types';
 
 /**
  * HandTrailTracker manages hand position tracking and trail interpolation

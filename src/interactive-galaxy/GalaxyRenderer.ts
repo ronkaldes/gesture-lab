@@ -11,8 +11,8 @@ import {
   ExplosionState,
   type GalaxyConfig,
   type GalaxyUniforms,
-} from './types/GalaxyTypes';
-import { PostProcessingManager } from './PostProcessingManager';
+} from './types';
+import { PostProcessingManager } from '../shared/PostProcessingManager';
 
 // Vertex shader: differential rotation + turbulence + twinkling + EXPLOSION
 const vertexShader = /* glsl */ `

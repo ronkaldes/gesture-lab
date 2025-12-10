@@ -4,19 +4,20 @@
  */
 
 import * as THREE from 'three';
-import { HandTracker } from './modules/HandTracker';
-import { GalaxyRenderer } from './modules/GalaxyRenderer';
+import { FoggyMirrorController } from './foggy-mirror/FoggyMirrorController';
+import { FoggyMirrorDebugInfo } from './foggy-mirror/types';
+import { GalaxyRenderer } from './interactive-galaxy/GalaxyRenderer';
 import {
   HandGalaxyController,
   DebugInfo,
-} from './modules/HandGalaxyController';
-import { FoggyMirrorController } from './modules/FoggyMirrorController';
-import { FoggyMirrorDebugInfo } from './modules/types/FoggyMirrorTypes';
-
-/**
- * Interaction mode
- */
-type InteractionMode = 'galaxy' | 'foggy-mirror';
+} from './interactive-galaxy/HandGalaxyController';
+import { HandTracker } from './shared/HandTracker';
+import { DebugComponent } from './ui/DebugComponent';
+import { Footer } from './ui/Footer';
+import { HintComponent } from './ui/HintComponent';
+import { InteractionMode, LandingPage } from './ui/LandingPage';
+import { ModeIndicator } from './ui/ModeIndicator';
+import { StatusIndicator } from './ui/StatusIndicator';
 
 /**
  * Application state
@@ -24,6 +25,7 @@ type InteractionMode = 'galaxy' | 'foggy-mirror';
 type AppState =
   | 'uninitialized'
   | 'initializing'
+  | 'landing'
   | 'running'
   | 'error'
   | 'disposed';
@@ -52,15 +54,19 @@ export class App {
   private controller: HandGalaxyController | null = null;
   private foggyMirrorController: FoggyMirrorController | null = null;
   private config: AppConfig;
-  private currentMode: InteractionMode = 'galaxy';
+  private currentMode: InteractionMode | null = null;
+
+  // UI Components
+  private landingPage: LandingPage | null = null;
+  private footer: Footer | null = null;
+  private hintComponent: HintComponent | null = null;
+  private modeIndicator: ModeIndicator | null = null;
+  private statusIndicator: StatusIndicator | null = null;
+  private debugComponent: DebugComponent | null = null;
 
   // DOM elements
   private container: HTMLElement;
   private videoElement: HTMLVideoElement | null = null;
-  private statusElement: HTMLElement | null = null;
-  private debugElement: HTMLElement | null = null;
-  private controlsElement: HTMLElement | null = null;
-  private modeSwitcherElement: HTMLElement | null = null;
 
   // State
   private state: AppState = 'uninitialized';
@@ -89,41 +95,21 @@ export class App {
       // Create DOM structure
       this.createDOMStructure();
 
+      // Initialize UI components
+      this.initializeUI();
+
       // Update status
       this.updateStatus('Initializing...', 'loading');
 
       // Check browser support
       this.checkBrowserSupport();
 
-      // Initialize hand tracker
+      // Initialize hand tracker (preload)
       this.updateStatus('Loading hand tracking model...', 'loading');
       await this.handTracker.initialize(this.videoElement!);
 
-      // Initialize galaxy renderer
-      this.updateStatus('Creating galaxy...', 'loading');
-      this.galaxyRenderer = new GalaxyRenderer(this.container, {
-        particleCount: this.config.particleCount,
-      });
-      this.galaxyRenderer.initialize();
-
-      // Create controller
-      this.controller = new HandGalaxyController(
-        this.handTracker,
-        this.galaxyRenderer
-      );
-
-      // Initialize Phase 3.2 gesture effect (star burst)
-      this.controller.initializeEffects(this.galaxyRenderer.getScene());
-
-      // Enable debug if configured
-      if (this.config.debug) {
-        this.enableDebug();
-      }
-
-      // Start animation loop
-      this.state = 'running';
-      this.updateStatus('Galaxy Mode - Press F for Foggy Mirror', 'ready');
-      this.startAnimationLoop();
+      // Show landing page
+      this.showLandingPage();
 
       console.log('[App] Started successfully');
     } catch (error) {
@@ -145,112 +131,18 @@ export class App {
     this.videoElement.autoplay = true;
     this.videoElement.playsInline = true;
     this.videoElement.muted = true;
-    // Initial styles for galaxy mode
-    this.applyVideoStyles('galaxy');
+    this.videoElement.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      opacity: 0; /* Hidden initially */
+      transition: opacity 0.5s ease;
+    `;
     this.container.appendChild(this.videoElement);
-
-    // Create status indicator
-    this.statusElement = document.createElement('div');
-    this.statusElement.id = 'status-indicator';
-    this.statusElement.style.cssText = `
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      padding: 10px 20px;
-      background: rgba(0, 0, 0, 0.7);
-      color: white;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px;
-      border-radius: 8px;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    `;
-    this.container.appendChild(this.statusElement);
-
-    // Create debug panel (hidden by default)
-    this.debugElement = document.createElement('div');
-    this.debugElement.id = 'debug-panel';
-    this.debugElement.style.cssText = `
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      padding: 15px;
-      background: rgba(0, 0, 0, 0.8);
-      color: #00ff00;
-      font-family: 'Monaco', 'Menlo', monospace;
-      font-size: 12px;
-      border-radius: 8px;
-      z-index: 100;
-      display: none;
-      min-width: 200px;
-    `;
-    this.container.appendChild(this.debugElement);
-
-    // Create mode switcher (top-left corner)
-    this.modeSwitcherElement = document.createElement('div');
-    this.modeSwitcherElement.id = 'mode-switcher';
-    this.modeSwitcherElement.style.cssText = `
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      padding: 12px 16px;
-      background: rgba(0, 0, 0, 0.8);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      color: rgba(255, 255, 255, 0.9);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 12px;
-      border-radius: 8px;
-      z-index: 100;
-      display: block;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    `;
-    this.modeSwitcherElement.innerHTML = `
-      <div style="margin-bottom: 8px; font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.6); text-transform: uppercase; letter-spacing: 0.5px;">Mode</div>
-      <div style="margin-bottom: 4px; color: #4caf50; font-weight: 600;">🌌 Galaxy Mode</div>
-      <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); font-size: 11px; color: rgba(255, 255, 255, 0.5);">
-        Press <kbd style="padding: 1px 5px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; font-family: monospace; font-size: 10px;">F</kbd> for Foggy Mirror
-      </div>
-    `;
-    this.container.appendChild(this.modeSwitcherElement);
-
-    // Create controls hint widget (bottom-right corner)
-    this.controlsElement = document.createElement('div');
-    this.controlsElement.id = 'controls-hint';
-    this.controlsElement.style.cssText = `
-      position: absolute;
-      bottom: 20px;
-      right: 20px;
-      padding: 16px 20px;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      color: rgba(255, 255, 255, 0.9);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 13px;
-      line-height: 1.8;
-      border-radius: 12px;
-      z-index: 100;
-      display: block;
-      max-width: 280px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    `;
-    this.controlsElement.innerHTML = `
-      <div style="margin-bottom: 10px; font-size: 14px; font-weight: 600; color: #fff; letter-spacing: 0.5px;">🎮 Galaxy Controls</div>
-      <div style="margin-bottom: 6px;">👐 Show both hands → Spawn galaxy</div>
-      <div style="margin-bottom: 6px;">↔️ Move hands apart → Grow</div>
-      <div style="margin-bottom: 6px;">↕️ Move hands together → Shrink</div>
-      <div style="margin-bottom: 6px;">🤏 Close hands → Big Bang explosion</div>
-      <div style="margin-bottom: 6px;">✨ Pinch gesture → Star burst</div>
-      <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.15); font-size: 11px; color: rgba(255, 255, 255, 0.6);">
-        Press <kbd style="padding: 2px 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; font-family: monospace;">H</kbd> to toggle hints
-      </div>
-    `;
-    this.container.appendChild(this.controlsElement);
 
     // Set container styles
     this.container.style.cssText = `
@@ -260,6 +152,80 @@ export class App {
       overflow: hidden;
       background: #000;
     `;
+  }
+
+  private initializeUI(): void {
+    // Landing Page
+    this.landingPage = new LandingPage(this.container, (mode) => {
+      if (mode === 'galaxy') {
+        this.switchToGalaxyMode();
+      } else {
+        this.switchToFoggyMirrorMode();
+      }
+    });
+
+    // Footer
+    this.footer = new Footer(this.container);
+
+    // Hint Component
+    this.hintComponent = new HintComponent(this.container);
+
+    // Mode Indicator
+    this.modeIndicator = new ModeIndicator(this.container);
+
+    // Status Indicator
+    this.statusIndicator = new StatusIndicator(this.container);
+
+    // Debug Component
+    this.debugComponent = new DebugComponent(this.container);
+
+    // Global Input Listeners
+    this.setupGlobalInputListeners();
+  }
+
+  private setupGlobalInputListeners(): void {
+    window.addEventListener('keydown', (event) => {
+      const key = event.key.toLowerCase();
+
+      // Global shortcuts (work everywhere)
+      if (key === 'd') {
+        this.toggleDebug();
+        return;
+      } else if (key === 'h') {
+        this.toggleControls();
+        return;
+      }
+
+      // Mode switching shortcuts
+      if (key === 'g') {
+        this.switchToGalaxyMode();
+        return;
+      } else if (key === 'f') {
+        this.switchToFoggyMirrorMode();
+        return;
+      }
+
+      // Mode specific shortcuts
+      if (this.currentMode === 'foggy-mirror' && key === 'r') {
+        this.resetFoggyMirror();
+      }
+    });
+  }
+
+  private showLandingPage(): void {
+    this.state = 'landing';
+    this.currentMode = null;
+
+    // Hide other UI
+    this.statusIndicator?.hide();
+    this.footer?.hide();
+    if (this.videoElement) this.videoElement.style.opacity = '0';
+    this.hintComponent?.hide(); // Assuming hide method exists or I need to add it
+    // Actually HintComponent doesn't have hide() in my implementation above, only toggle().
+    // I should add hide() to HintComponent.
+
+    // Show landing
+    this.landingPage?.show();
   }
 
   /**
@@ -297,35 +263,16 @@ export class App {
     message: string,
     state: 'loading' | 'ready' | 'error' | 'active'
   ): void {
-    if (!this.statusElement) return;
-
-    const stateColors: Record<string, string> = {
-      loading: '#ffeb3b',
-      ready: '#4caf50',
-      error: '#f44336',
-      active: '#2196f3',
-    };
-
-    const stateIcons: Record<string, string> = {
-      loading: '⏳',
-      ready: '✓',
-      error: '✗',
-      active: '👐',
-    };
-
-    this.statusElement.innerHTML = `
-      <span style="color: ${stateColors[state]}">${stateIcons[state]}</span>
-      <span>${message}</span>
-    `;
+    this.statusIndicator?.update(message, state);
   }
 
   /**
    * Enable debug mode
    */
-  private enableDebug(): void {
-    if (!this.debugElement) return;
+  public enableDebug(): void {
+    if (!this.debugComponent) return;
 
-    this.debugElement.style.display = 'block';
+    this.debugComponent.show();
 
     if (this.currentMode === 'galaxy' && this.controller) {
       this.controller.enableDebug((info) => this.updateGalaxyDebugPanel(info));
@@ -343,12 +290,12 @@ export class App {
    * Update galaxy debug panel with current info
    */
   private updateGalaxyDebugPanel(info: DebugInfo): void {
-    if (!this.debugElement) return;
+    if (!this.debugComponent) return;
 
     const fps = this.fpsCounter.getFps();
 
-    this.debugElement.innerHTML = `
-      <div style="margin-bottom: 8px; color: #fff; font-weight: bold;">Galaxy Debug</div>
+    this.debugComponent.update(`
+      <div style="margin-bottom: 8px; color: #fff; font-weight: bold;">Debug Info</div>
       <div>FPS: ${fps.toFixed(1)}</div>
       <div>Hands: ${info.handsDetected}</div>
       <div>Distance: ${info.distance.toFixed(3)}</div>
@@ -365,17 +312,17 @@ export class App {
         y: ${THREE.MathUtils.radToDeg(info.rotation.y).toFixed(1)}°<br>
         z: ${THREE.MathUtils.radToDeg(info.rotation.z).toFixed(1)}°
       </div>
-    `;
+    `);
   }
 
   /**
    * Update foggy mirror debug panel with current info
    */
   private updateFoggyMirrorDebugPanel(info: FoggyMirrorDebugInfo): void {
-    if (!this.debugElement) return;
+    if (!this.debugComponent) return;
 
-    this.debugElement.innerHTML = `
-      <div style="margin-bottom: 8px; color: #fff; font-weight: bold;">Foggy Mirror Debug</div>
+    this.debugComponent.update(`
+      <div style="margin-bottom: 8px; color: #fff; font-weight: bold;">Debug Info</div>
       <div>FPS: ${info.fps.toFixed(1)}</div>
       <div>Hands: ${info.handsDetected}</div>
       <div>Trail Points: ${info.trailPoints}</div>
@@ -384,15 +331,20 @@ export class App {
         <div>Wipe Speed: ${info.avgVelocity.toFixed(0)} px/f</div>
         <div>Brush Size: ${info.avgBrushSize.toFixed(0)} px</div>
       </div>
-    `;
+    `);
   }
 
   /**
    * Start the main animation loop
    */
   private startAnimationLoop(): void {
+    if (this.animationFrameId !== null) return;
+
     const animate = (timestamp: number) => {
-      if (this.state !== 'running') return;
+      if (this.state !== 'running') {
+        this.animationFrameId = null;
+        return;
+      }
 
       // Update FPS counter
       this.fpsCounter.update();
@@ -433,19 +385,14 @@ export class App {
    * Toggle debug mode
    */
   toggleDebug(): void {
-    if (!this.debugElement) return;
+    if (!this.debugComponent) return;
 
-    const isDebugVisible = this.debugElement.style.display !== 'none';
+    const isVisible = this.debugComponent.toggle();
 
-    if (isDebugVisible) {
-      // Hide debug
-      this.debugElement.style.display = 'none';
+    if (!isVisible) {
       this.controller?.disableDebug();
       this.foggyMirrorController?.disableDebug();
     } else {
-      // Show debug
-      this.debugElement.style.display = 'block';
-
       if (this.currentMode === 'galaxy' && this.controller) {
         this.controller.enableDebug((info) =>
           this.updateGalaxyDebugPanel(info)
@@ -465,13 +412,7 @@ export class App {
    * Toggle controls hint widget
    */
   toggleControls(): void {
-    if (!this.controlsElement) return;
-
-    if (this.controlsElement.style.display === 'none') {
-      this.controlsElement.style.display = 'block';
-    } else {
-      this.controlsElement.style.display = 'none';
-    }
+    this.hintComponent?.toggle();
   }
 
   /**
@@ -488,6 +429,8 @@ export class App {
       height: 100%;
       object-fit: cover;
       transform: scaleX(-1);
+      transition: opacity 0.5s ease;
+      opacity: 1;
     `;
 
     if (mode === 'galaxy') {
@@ -504,27 +447,39 @@ export class App {
    * Switch to galaxy interaction mode
    */
   switchToGalaxyMode(): void {
-    if (this.state !== 'running') {
-      console.warn('[App] Cannot switch modes - app not running');
-      return;
-    }
-
-    if (this.currentMode === 'galaxy') {
-      console.log('[App] Already in galaxy mode');
-      return;
-    }
+    if (this.currentMode === 'galaxy') return;
 
     console.log('[App] Switching to galaxy mode');
+
+    // Hide landing page
+    this.landingPage?.hide();
 
     // Stop foggy-mirror controller
     if (this.foggyMirrorController) {
       this.foggyMirrorController.stop();
       this.foggyMirrorController.disableDebug();
+      this.foggyMirrorController.dispose(); // Fully dispose to save resources
+      this.foggyMirrorController = null;
     }
 
-    // Show galaxy renderer
-    if (this.galaxyRenderer) {
+    // Initialize galaxy renderer if needed
+    if (!this.galaxyRenderer) {
+      this.updateStatus('Creating galaxy...', 'loading');
+      this.galaxyRenderer = new GalaxyRenderer(this.container, {
+        particleCount: this.config.particleCount,
+      });
+      this.galaxyRenderer.initialize();
+    } else {
       this.galaxyRenderer.show();
+    }
+
+    // Initialize controller if needed
+    if (!this.controller) {
+      this.controller = new HandGalaxyController(
+        this.handTracker,
+        this.galaxyRenderer
+      );
+      this.controller.initializeEffects(this.galaxyRenderer.getScene());
     }
 
     // Apply video styles
@@ -532,20 +487,21 @@ export class App {
 
     // Update mode
     this.currentMode = 'galaxy';
+    this.state = 'running';
     this.updateStatus('Galaxy Mode - Show both hands', 'ready');
 
-    // Update mode switcher
-    this.updateModeSwitcher('galaxy');
+    // Show UI elements
+    this.statusIndicator?.show();
+    this.footer?.show();
+    this.hintComponent?.update('galaxy');
+    this.hintComponent?.show();
+    this.modeIndicator?.update('galaxy');
 
-    // Update controls hint
-    this.updateControlsHint('galaxy');
+    // Start loop
+    this.startAnimationLoop();
 
     // Re-enable debug if it was active
-    if (
-      this.debugElement &&
-      this.debugElement.style.display !== 'none' &&
-      this.controller
-    ) {
+    if (this.debugComponent?.isVisibleState() && this.controller) {
       this.controller.enableDebug((info) => this.updateGalaxyDebugPanel(info));
     }
   }
@@ -554,17 +510,26 @@ export class App {
    * Switch to foggy-mirror interaction mode
    */
   switchToFoggyMirrorMode(): void {
-    if (this.state !== 'running') {
-      console.warn('[App] Cannot switch modes - app not running');
-      return;
-    }
-
-    if (this.currentMode === 'foggy-mirror') {
-      console.log('[App] Already in foggy-mirror mode');
-      return;
-    }
+    if (this.currentMode === 'foggy-mirror') return;
 
     console.log('[App] Switching to foggy-mirror mode');
+
+    // Hide landing page
+    this.landingPage?.hide();
+
+    // Stop galaxy mode
+    if (this.galaxyRenderer) {
+      this.galaxyRenderer.hide();
+      // We could dispose it, but keeping it might be faster for switching back.
+      // However, user said "fully disable the other".
+      // Let's dispose it to be safe and save memory.
+      this.galaxyRenderer.dispose();
+      this.galaxyRenderer = null;
+    }
+    if (this.controller) {
+      this.controller.dispose();
+      this.controller = null;
+    }
 
     // Initialize foggy mirror controller if needed
     if (!this.foggyMirrorController) {
@@ -576,16 +541,6 @@ export class App {
       this.foggyMirrorController.initialize();
     }
 
-    // Hide galaxy renderer
-    if (this.galaxyRenderer) {
-      this.galaxyRenderer.hide();
-    }
-
-    // Disable galaxy debug
-    if (this.controller) {
-      this.controller.disableDebug();
-    }
-
     // Start foggy mirror controller
     this.foggyMirrorController.start();
 
@@ -594,16 +549,21 @@ export class App {
 
     // Update mode
     this.currentMode = 'foggy-mirror';
-    this.updateStatus('Foggy Mirror - Use hands to clear fog', 'ready');
+    this.state = 'running';
+    this.updateStatus('Foggy Mirror', 'ready');
 
-    // Update mode switcher
-    this.updateModeSwitcher('foggy-mirror');
+    // Show UI elements
+    this.statusIndicator?.show();
+    this.footer?.show();
+    this.hintComponent?.update('foggy-mirror');
+    this.hintComponent?.show();
+    this.modeIndicator?.update('foggy-mirror');
 
-    // Update controls hint
-    this.updateControlsHint('foggy-mirror');
+    // Start loop (for FPS and status, though foggy mirror has its own loop)
+    this.startAnimationLoop();
 
     // Re-enable debug if it was active
-    if (this.debugElement && this.debugElement.style.display !== 'none') {
+    if (this.debugComponent?.isVisibleState()) {
       this.foggyMirrorController.enableDebug((info) =>
         this.updateFoggyMirrorDebugPanel(info)
       );
@@ -624,75 +584,9 @@ export class App {
     // Reset status message after a short delay
     setTimeout(() => {
       if (this.currentMode === 'foggy-mirror') {
-        this.updateStatus('Foggy Mirror - Use hands to clear fog', 'ready');
+        this.updateStatus('Foggy Mirror', 'ready');
       }
     }, 2000);
-  }
-
-  /**
-   * Update mode switcher UI
-   */
-  private updateModeSwitcher(mode: InteractionMode): void {
-    if (!this.modeSwitcherElement) return;
-
-    if (mode === 'galaxy') {
-      this.modeSwitcherElement.innerHTML = `
-        <div style="margin-bottom: 8px; font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.6); text-transform: uppercase; letter-spacing: 0.5px;">Mode</div>
-        <div style="margin-bottom: 4px; color: #4caf50; font-weight: 600;">🌌 Galaxy Mode</div>
-        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); font-size: 11px; color: rgba(255, 255, 255, 0.5);">
-          Press <kbd style="padding: 1px 5px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; font-family: monospace; font-size: 10px;">F</kbd> for Foggy Mirror
-        </div>
-      `;
-    } else {
-      this.modeSwitcherElement.innerHTML = `
-        <div style="margin-bottom: 8px; font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.6); text-transform: uppercase; letter-spacing: 0.5px;">Mode</div>
-        <div style="margin-bottom: 4px; color: #2196f3; font-weight: 600;">🌫️ Foggy Mirror</div>
-        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); font-size: 11px; color: rgba(255, 255, 255, 0.5);">
-          Press <kbd style="padding: 1px 5px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; font-family: monospace; font-size: 10px;">G</kbd> for Galaxy Mode
-        </div>
-        <div style="margin-top: 4px; font-size: 11px; color: rgba(255, 255, 255, 0.5);">
-          Press <kbd style="padding: 1px 5px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; font-family: monospace; font-size: 10px;">R</kbd> to Reset Fog
-        </div>
-      `;
-    }
-  }
-
-  /**
-   * Update controls hint based on mode
-   */
-  private updateControlsHint(mode: InteractionMode): void {
-    if (!this.controlsElement) return;
-
-    if (mode === 'galaxy') {
-      this.controlsElement.innerHTML = `
-        <div style="margin-bottom: 10px; font-size: 14px; font-weight: 600; color: #fff; letter-spacing: 0.5px;">🎮 Galaxy Controls</div>
-        <div style="margin-bottom: 6px;">👐 Show both hands → Spawn galaxy</div>
-        <div style="margin-bottom: 6px;">↔️ Move hands apart → Grow</div>
-        <div style="margin-bottom: 6px;">↕️ Move hands together → Shrink</div>
-        <div style="margin-bottom: 6px;">🤏 Close hands → Big Bang explosion</div>
-        <div style="margin-bottom: 6px;">✨ Pinch gesture → Star burst</div>
-        <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.15); font-size: 11px; color: rgba(255, 255, 255, 0.6);">
-          Press <kbd style="padding: 2px 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; font-family: monospace;">H</kbd> to toggle hints
-        </div>
-      `;
-    } else {
-      this.controlsElement.innerHTML = `
-        <div style="margin-bottom: 10px; font-size: 14px; font-weight: 600; color: #fff; letter-spacing: 0.5px;">🌫️ Foggy Mirror Controls</div>
-        <div style="margin-bottom: 6px;">👋 Move hands to wipe fog</div>
-        <div style="margin-bottom: 6px;">🌈 Reveal camera feed underneath</div>
-        <div style="margin-bottom: 6px;">✨ Smooth trails follow your hands</div>
-        <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.15); font-size: 11px; color: rgba(255, 255, 255, 0.6);">
-          Press <kbd style="padding: 2px 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; font-family: monospace;">H</kbd> to toggle hints
-        </div>
-      `;
-    }
-  }
-
-  /**
-   * Get current interaction mode
-   */
-  getCurrentMode(): InteractionMode {
-    return this.currentMode;
   }
 
   /**

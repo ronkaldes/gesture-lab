@@ -7,7 +7,7 @@ import {
   BlurOverlayConfig,
   DEFAULT_BLUR_OVERLAY_CONFIG,
   TrailPoint,
-} from './types/WipeToRevealTypes';
+} from './wipe-types';
 
 /**
  * BlurOverlay manages a canvas element that overlays content with a blur effect

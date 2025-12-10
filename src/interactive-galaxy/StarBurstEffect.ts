@@ -20,7 +20,7 @@ import * as THREE from 'three';
 import {
   StarBurstConfig,
   DEFAULT_STAR_BURST_CONFIG,
-} from './types/GestureTypes';
+} from '../shared/GestureTypes';
 
 /**
  * Individual burst instance tracking

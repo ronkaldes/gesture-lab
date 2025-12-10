@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { NormalizedLandmark } from '@mediapipe/tasks-vision';
-import { HandLandmarkIndex } from './types/HandTypes';
+import { HandLandmarkIndex } from './HandTypes';
 import {
   GestureType,
   GestureState,
@@ -25,7 +25,7 @@ import {
   Handedness,
   DEFAULT_GESTURE_CONFIG,
   AnyGestureEvent,
-} from './types/GestureTypes';
+} from './GestureTypes';
 
 /**
  * Internal state for tracking pinch gesture lifecycles

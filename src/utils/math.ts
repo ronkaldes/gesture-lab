@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'three';
-import type { NormalizedLandmark } from '../modules/types/HandTypes';
+import type { NormalizedLandmark } from '../shared/HandTypes';
 
 /**
  * Calculate Euclidean distance between two 3D points

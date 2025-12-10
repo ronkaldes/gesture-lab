@@ -967,7 +967,7 @@ handTracker.dispose();
 **Per-Module Types:**
 
 ```
-src/modules/types/
+src/interactive-galaxy/types.ts
 ├── HandTypes.ts        # MediaPipe hand landmark types
 ├── GalaxyTypes.ts      # Galaxy config, uniforms, explosion states
 ├── GestureTypes.ts     # Gesture detection types, events

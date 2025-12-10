@@ -35,7 +35,8 @@
     /* Source maps for debugging */
     "sourceMap": true,
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "types": ["vite/client"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

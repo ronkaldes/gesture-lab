@@ -3,15 +3,15 @@
  * Coordinates HandTracker, FogOverlay, and HandTrailTracker for seamless fog clearing
  */
 
-import type { HandTracker } from './HandTracker';
+import type { HandTracker } from '../shared/HandTracker';
 import { FogOverlay } from './FogOverlay';
-import { HandTrailTracker } from './HandTrailTracker';
+import { HandTrailTracker } from '../shared/HandTrailTracker';
 import {
   FoggyMirrorConfig,
   DEFAULT_FOGGY_MIRROR_CONFIG,
   FoggyMirrorState,
   FoggyMirrorDebugInfo,
-} from './types/FoggyMirrorTypes';
+} from './types';
 
 /**
  * FoggyMirrorController manages the foggy mirror interaction mode
