@@ -39,6 +39,18 @@ document.addEventListener('keydown', (event) => {
       // Toggle controls hint
       app.toggleControls();
       break;
+    case 'g':
+      // Switch to galaxy mode
+      app.switchToGalaxyMode();
+      break;
+    case 'f':
+      // Switch to foggy mirror mode
+      app.switchToFoggyMirrorMode();
+      break;
+    case 'r':
+      // Reset foggy mirror
+      app.resetFoggyMirror();
+      break;
     case 'escape':
       // Clean up on Escape
       app.dispose();

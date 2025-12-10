@@ -605,6 +605,20 @@ export class GalaxyRenderer {
   }
 
   /**
+   * Show the galaxy (convenience method)
+   */
+  show(): void {
+    this.setVisible(true);
+  }
+
+  /**
+   * Hide the galaxy (convenience method)
+   */
+  hide(): void {
+    this.setVisible(false);
+  }
+
+  /**
    * Check if galaxy is currently visible
    */
   isVisible(): boolean {
