@@ -33,6 +33,11 @@ Clear the mist to reveal reality.
 - **Gestures**: Wave hands to wipe the fog off the mirror.
 - [Design Document](docs/DESIGN-FOGGY-MIRROR.md)
 
+
+https://github.com/user-attachments/assets/65dfe3ac-6dc1-4339-be15-adaa11671228
+
+
+
 ## 🚀 Quick Start
 
 ```bash
