@@ -11,6 +11,8 @@ import {
   HandGalaxyController,
   DebugInfo,
 } from './interactive-galaxy/HandGalaxyController';
+import { CosmicSlashController } from './cosmic-slash/CosmicSlashController';
+import { CosmicSlashDebugInfo } from './cosmic-slash/types';
 import { HandTracker } from './shared/HandTracker';
 import { DebugComponent } from './ui/DebugComponent';
 import { Footer } from './ui/Footer';
@@ -53,6 +55,7 @@ export class App {
   private galaxyRenderer: GalaxyRenderer | null = null;
   private controller: HandGalaxyController | null = null;
   private foggyMirrorController: FoggyMirrorController | null = null;
+  private cosmicSlashController: CosmicSlashController | null = null;
   private config: AppConfig;
   private currentMode: InteractionMode | null = null;
 
@@ -159,8 +162,10 @@ export class App {
     this.landingPage = new LandingPage(this.container, (mode) => {
       if (mode === 'galaxy') {
         this.switchToGalaxyMode();
-      } else {
+      } else if (mode === 'foggy-mirror') {
         this.switchToFoggyMirrorMode();
+      } else if (mode === 'cosmic-slash') {
+        this.switchToCosmicSlashMode();
       }
     });
 
@@ -178,11 +183,7 @@ export class App {
     // Mode Indicator
     this.modeIndicator = new ModeIndicator(this.container);
     this.modeIndicator.onClick(() => {
-      if (this.currentMode === 'galaxy') {
-        this.switchToFoggyMirrorMode();
-      } else {
-        this.switchToGalaxyMode();
-      }
+      this.returnToMainMenu();
     });
 
     // Status Indicator
@@ -202,12 +203,26 @@ export class App {
     window.addEventListener('keydown', (event) => {
       const key = event.key.toLowerCase();
 
+      if (event.code === 'Space') {
+        if (this.currentMode === 'cosmic-slash' && this.cosmicSlashController) {
+          event.preventDefault();
+          const paused = this.cosmicSlashController.togglePause();
+          if (paused) {
+            this.updateStatus('Paused — Press Space to resume', 'ready');
+          }
+        }
+        return;
+      }
+
       // Global shortcuts (work everywhere)
       if (key === 'd') {
         this.toggleDebug();
         return;
       } else if (key === 'h') {
         this.toggleControls();
+        return;
+      } else if (key === 'm') {
+        this.returnToMainMenu();
         return;
       }
 
@@ -218,11 +233,22 @@ export class App {
       } else if (key === 'f') {
         this.switchToFoggyMirrorMode();
         return;
+      } else if (key === 'c') {
+        this.switchToCosmicSlashMode();
+        return;
       }
 
       // Mode specific shortcuts
-      if (this.currentMode === 'foggy-mirror' && key === 'r') {
-        this.resetFoggyMirror();
+      if (key === 'r') {
+        // Restart current mode
+        if (this.currentMode === 'foggy-mirror') {
+          this.resetFoggyMirror();
+        } else if (this.currentMode === 'cosmic-slash') {
+          this.cosmicSlashController?.reset();
+        } else if (this.currentMode === 'galaxy') {
+          this.controller?.reset();
+        }
+        return;
       }
     });
   }
@@ -241,6 +267,64 @@ export class App {
 
     // Show landing
     this.landingPage?.show();
+  }
+
+  private returnToMainMenu(): void {
+    if (this.state === 'landing') {
+      this.showLandingPage();
+      return;
+    }
+
+    // Stop galaxy mode
+    if (this.galaxyRenderer) {
+      this.galaxyRenderer.hide();
+      this.galaxyRenderer.dispose();
+      this.galaxyRenderer = null;
+    }
+    if (this.controller) {
+      this.controller.disableDebug();
+      this.controller.dispose();
+      this.controller = null;
+    }
+
+    // Stop foggy-mirror controller
+    if (this.foggyMirrorController) {
+      this.foggyMirrorController.stop();
+      this.foggyMirrorController.disableDebug();
+      this.foggyMirrorController.dispose();
+      this.foggyMirrorController = null;
+    }
+
+    // Stop cosmic slash controller
+    if (this.cosmicSlashController) {
+      this.cosmicSlashController.stop();
+      this.cosmicSlashController.disableDebug();
+      this.cosmicSlashController.dispose();
+      this.cosmicSlashController = null;
+    }
+
+    this.showLandingPage();
+  }
+
+  private updateHandStatus(handCount: number): void {
+    if (this.currentMode === null) return;
+
+    if (this.currentMode === 'cosmic-slash' && this.cosmicSlashController) {
+      if (this.cosmicSlashController.getIsPaused()) {
+        this.updateStatus('Paused — Press Space to resume', 'ready');
+        return;
+      }
+    }
+
+    if (handCount <= 0) {
+      this.updateStatus('No hands detected', 'ready');
+      return;
+    }
+    if (handCount === 1) {
+      this.updateStatus('1 hand detected', 'active');
+      return;
+    }
+    this.updateStatus(`${handCount} hands detected`, 'active');
   }
 
   /**
@@ -298,6 +382,13 @@ export class App {
       this.foggyMirrorController.enableDebug((info) =>
         this.updateFoggyMirrorDebugPanel(info)
       );
+    } else if (
+      this.currentMode === 'cosmic-slash' &&
+      this.cosmicSlashController
+    ) {
+      this.cosmicSlashController.enableDebug((info) =>
+        this.updateCosmicSlashDebugPanel(info)
+      );
     }
   }
 
@@ -340,11 +431,28 @@ export class App {
       <div style="margin-bottom: 8px; color: #fff; font-weight: bold;">Debug Info</div>
       <div>FPS: ${info.fps.toFixed(1)}</div>
       <div>Hands: ${info.handsDetected}</div>
-      <div>Trail Points: ${info.trailPoints}</div>
       <div>Cleared: ${info.clearedPercentage.toFixed(1)}%</div>
       <div style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 4px;">
         <div>Wipe Speed: ${info.avgVelocity.toFixed(0)} px/f</div>
         <div>Brush Size: ${info.avgBrushSize.toFixed(0)} px</div>
+      </div>
+    `);
+  }
+
+  /**
+   * Update cosmic slash debug panel with current info
+   */
+  private updateCosmicSlashDebugPanel(info: CosmicSlashDebugInfo): void {
+    if (!this.debugComponent) return;
+
+    this.debugComponent.update(`
+      <div style="margin-bottom: 8px; color: #fff; font-weight: bold;">Debug Info</div>
+      <div>FPS: ${info.fps.toFixed(1)}</div>
+      <div>Hands: ${info.handsDetected}</div>
+      <div>Active Objects: ${info.activeObjects}</div>
+      <div>Total Sliced: ${info.totalSliced}</div>
+      <div style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 4px;">
+        <div>Active Explosions: ${info.activeExplosions}</div>
       </div>
     `);
   }
@@ -368,15 +476,14 @@ export class App {
       if (this.currentMode === 'galaxy') {
         this.controller?.update(timestamp);
 
-        // Update status based on hands (get from controller to avoid duplicate detection)
         const handCount = this.controller?.getHandCount() ?? 0;
-        if (handCount >= 2) {
-          this.updateStatus(`${handCount} hands detected`, 'active');
-        } else if (handCount === 1) {
-          this.updateStatus('Show both hands', 'ready');
-        } else {
-          this.updateStatus('No hands detected', 'ready');
-        }
+        this.updateHandStatus(handCount);
+      } else if (this.currentMode === 'foggy-mirror') {
+        const handCount = this.foggyMirrorController?.getHandCount() ?? 0;
+        this.updateHandStatus(handCount);
+      } else if (this.currentMode === 'cosmic-slash') {
+        const handCount = this.cosmicSlashController?.getHandCount() ?? 0;
+        this.updateHandStatus(handCount);
       }
       // Note: foggy-mirror mode has its own update loop in FoggyMirrorController
 
@@ -407,6 +514,7 @@ export class App {
     if (!isVisible) {
       this.controller?.disableDebug();
       this.foggyMirrorController?.disableDebug();
+      this.cosmicSlashController?.disableDebug();
     } else {
       if (this.currentMode === 'galaxy' && this.controller) {
         this.controller.enableDebug((info) =>
@@ -418,6 +526,13 @@ export class App {
       ) {
         this.foggyMirrorController.enableDebug((info) =>
           this.updateFoggyMirrorDebugPanel(info)
+        );
+      } else if (
+        this.currentMode === 'cosmic-slash' &&
+        this.cosmicSlashController
+      ) {
+        this.cosmicSlashController.enableDebug((info) =>
+          this.updateCosmicSlashDebugPanel(info)
         );
       }
     }
@@ -452,6 +567,10 @@ export class App {
       // Dim video for galaxy mode (background effect)
       this.videoElement.style.cssText =
         baseStyles + 'filter: brightness(0.20) contrast(0.6);';
+    } else if (mode === 'cosmic-slash') {
+      // Dim video for cosmic slash (cosmic background effect)
+      this.videoElement.style.cssText =
+        baseStyles + 'filter: brightness(0.25) contrast(0.7) saturate(0.8);';
     } else {
       // Full brightness for foggy-mirror mode
       this.videoElement.style.cssText = baseStyles + 'filter: none;';
@@ -473,8 +592,16 @@ export class App {
     if (this.foggyMirrorController) {
       this.foggyMirrorController.stop();
       this.foggyMirrorController.disableDebug();
-      this.foggyMirrorController.dispose(); // Fully dispose to save resources
+      this.foggyMirrorController.dispose();
       this.foggyMirrorController = null;
+    }
+
+    // Stop cosmic slash controller
+    if (this.cosmicSlashController) {
+      this.cosmicSlashController.stop();
+      this.cosmicSlashController.disableDebug();
+      this.cosmicSlashController.dispose();
+      this.cosmicSlashController = null;
     }
 
     // Initialize galaxy renderer if needed
@@ -503,7 +630,7 @@ export class App {
     // Update mode
     this.currentMode = 'galaxy';
     this.state = 'running';
-    this.updateStatus('Galaxy Mode - Show both hands', 'ready');
+    this.updateHandStatus(0);
 
     // Show UI elements
     this.statusIndicator?.show();
@@ -535,15 +662,20 @@ export class App {
     // Stop galaxy mode
     if (this.galaxyRenderer) {
       this.galaxyRenderer.hide();
-      // We could dispose it, but keeping it might be faster for switching back.
-      // However, user said "fully disable the other".
-      // Let's dispose it to be safe and save memory.
       this.galaxyRenderer.dispose();
       this.galaxyRenderer = null;
     }
     if (this.controller) {
       this.controller.dispose();
       this.controller = null;
+    }
+
+    // Stop cosmic slash controller
+    if (this.cosmicSlashController) {
+      this.cosmicSlashController.stop();
+      this.cosmicSlashController.disableDebug();
+      this.cosmicSlashController.dispose();
+      this.cosmicSlashController = null;
     }
 
     // Initialize foggy mirror controller if needed
@@ -565,7 +697,7 @@ export class App {
     // Update mode
     this.currentMode = 'foggy-mirror';
     this.state = 'running';
-    this.updateStatus('Foggy Mirror', 'ready');
+    this.updateHandStatus(0);
 
     // Show UI elements
     this.statusIndicator?.show();
@@ -605,6 +737,76 @@ export class App {
   }
 
   /**
+   * Switch to cosmic slash interaction mode
+   */
+  switchToCosmicSlashMode(): void {
+    if (this.currentMode === 'cosmic-slash') return;
+
+    console.log('[App] Switching to cosmic-slash mode');
+
+    // Hide landing page
+    this.landingPage?.hide();
+
+    // Stop galaxy mode
+    if (this.galaxyRenderer) {
+      this.galaxyRenderer.hide();
+      this.galaxyRenderer.dispose();
+      this.galaxyRenderer = null;
+    }
+    if (this.controller) {
+      this.controller.dispose();
+      this.controller = null;
+    }
+
+    // Stop foggy-mirror controller
+    if (this.foggyMirrorController) {
+      this.foggyMirrorController.stop();
+      this.foggyMirrorController.disableDebug();
+      this.foggyMirrorController.dispose();
+      this.foggyMirrorController = null;
+    }
+
+    // Initialize cosmic slash controller if needed
+    if (!this.cosmicSlashController) {
+      this.updateStatus('Loading Cosmic Slash...', 'loading');
+      this.cosmicSlashController = new CosmicSlashController(
+        this.handTracker,
+        this.container,
+        { debug: this.config.debug }
+      );
+      this.cosmicSlashController.initialize();
+    }
+
+    // Start cosmic slash controller
+    this.cosmicSlashController.start();
+
+    // Apply video styles - dim video for cosmic mode
+    this.applyVideoStyles('cosmic-slash');
+
+    // Update mode
+    this.currentMode = 'cosmic-slash';
+    this.state = 'running';
+    this.updateHandStatus(0);
+
+    // Show UI elements
+    this.statusIndicator?.show();
+    this.footer?.show();
+    this.hintComponent?.update('cosmic-slash');
+    this.hintComponent?.show();
+    this.modeIndicator?.update('cosmic-slash');
+
+    // Start loop
+    this.startAnimationLoop();
+
+    // Re-enable debug if it was active
+    if (this.debugComponent?.isVisibleState()) {
+      this.cosmicSlashController.enableDebug((info) =>
+        this.updateCosmicSlashDebugPanel(info)
+      );
+    }
+  }
+
+  /**
    * Clean up and stop the application
    */
   dispose(): void {
@@ -619,6 +821,7 @@ export class App {
     // Dispose modules
     this.controller?.dispose();
     this.foggyMirrorController?.dispose();
+    this.cosmicSlashController?.dispose();
     this.handTracker.dispose();
     this.galaxyRenderer?.dispose();
 

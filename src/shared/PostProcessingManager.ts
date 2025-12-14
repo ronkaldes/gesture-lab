@@ -25,6 +25,7 @@ import {
   LUT3DEffect,
   BlendFunction,
   KernelSize,
+  Effect,
 } from 'postprocessing';
 import { GravitationalLensingEffect } from '../interactive-galaxy/GravitationalLensingEffect';
 
@@ -127,7 +128,7 @@ export class PostProcessingManager {
     this.composer.addPass(renderPass);
 
     // Pass 2: Apply effects
-    const effects: any[] = [];
+    const effects: Effect[] = [];
 
     // Bloom Effect (glowing particles)
     if (this.config.enableBloom) {
@@ -400,25 +401,11 @@ export class PostProcessingManager {
   dispose(): void {
     this.composer.dispose();
 
-    // Individual effect disposal (if they have dispose methods)
-    if (this.bloomEffect && 'dispose' in this.bloomEffect) {
-      (this.bloomEffect as any).dispose();
-    }
-    if (
-      this.chromaticAberrationEffect &&
-      'dispose' in this.chromaticAberrationEffect
-    ) {
-      (this.chromaticAberrationEffect as any).dispose();
-    }
-    if (this.colorGradingEffect && 'dispose' in this.colorGradingEffect) {
-      (this.colorGradingEffect as any).dispose();
-    }
-    if (
-      this.gravitationalLensingEffect &&
-      'dispose' in this.gravitationalLensingEffect
-    ) {
-      (this.gravitationalLensingEffect as any).dispose();
-    }
+    // Individual effect disposal - Effect base class has dispose method
+    this.bloomEffect?.dispose();
+    this.chromaticAberrationEffect?.dispose();
+    this.colorGradingEffect?.dispose();
+    this.gravitationalLensingEffect?.dispose();
 
     console.log('[PostProcessingManager] Disposed');
   }

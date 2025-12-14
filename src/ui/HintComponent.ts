@@ -17,7 +17,7 @@ export class HintComponent {
     this.actionHandler = handler;
   }
 
-  update(mode: 'galaxy' | 'foggy-mirror'): void {
+  update(mode: 'galaxy' | 'foggy-mirror' | 'cosmic-slash'): void {
     if (!this.element) {
       this.createDOM();
     }
@@ -30,7 +30,7 @@ export class HintComponent {
     if (mode === 'galaxy') {
       content.innerHTML = `
         <div class="hint-header">
-          <span class="hint-title">Gesture Guide</span>
+          <span class="hint-title">Guide</span>
         </div>
         <div class="hint-list">
           <div class="hint-item">Show both hands to spawn</div>
@@ -40,13 +40,26 @@ export class HintComponent {
           <div class="hint-item">Pinch for Star burst</div>
         </div>
       `;
+    } else if (mode === 'cosmic-slash') {
+      content.innerHTML = `
+        <div class="hint-header">
+          <span class="hint-title">Guide</span>
+        </div>
+        <div class="hint-list">
+          <div class="hint-item">Swipe through objects to score points</div>
+          <div class="hint-item">Fast swipes for bigger explosions</div>
+          <div class="hint-item">Show both hands for POW beam</div>
+          <div class="hint-item">Press <kbd>Space</kbd> to pause/resume</div>
+          <div class="hint-item">Press <kbd>R</kbd> to restart</div>
+        </div>
+      `;
     } else {
       content.innerHTML = `
         <div class="hint-header">
-          <span class="hint-title">Gesture Guide</span>
+          <span class="hint-title">Guide</span>
         </div>
         <div class="hint-list">
-          <div class="hint-item">Wave hand to wipe fog</div>
+          <div class="hint-item">Wave your hand to wipe away the fog</div>
           <div class="hint-item highlight clickable-hint" data-action="reset">
             <span class="desktop-text">Press <kbd>R</kbd> to reset</span>
             <span class="mobile-text">Tap to Reset</span>
@@ -315,7 +328,7 @@ export class HintComponent {
         border-top: 1px solid rgba(255, 255, 255, 0.05);
         font-size: 0.75rem;
         color: rgba(255, 255, 255, 0.4);
-        text-align: right;
+        text-align: center;
         text-transform: uppercase;
         letter-spacing: 0.05em;
       }

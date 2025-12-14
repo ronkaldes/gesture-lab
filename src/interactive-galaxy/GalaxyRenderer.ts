@@ -796,7 +796,7 @@ export class GalaxyRenderer {
 
     // State transitions
     switch (this.explosionState) {
-      case ExplosionState.SINGULARITY:
+      case ExplosionState.SINGULARITY: {
         // Animate scale from initial value to 0 for smooth collapse
         const collapseProgress = Math.min(
           explosionElapsed / this.singularityDuration,
@@ -814,8 +814,9 @@ export class GalaxyRenderer {
           this.uniforms.uExplosionTime.value = 0;
         }
         break;
+      }
 
-      case ExplosionState.EXPLODING:
+      case ExplosionState.EXPLODING: {
         // Animate scale from 0 to larger for visual expansion
         const explosionProgress = Math.min(
           explosionElapsed / this.explosionDuration,
@@ -832,6 +833,7 @@ export class GalaxyRenderer {
           this.uniforms.uExplosionTime.value = 0;
         }
         break;
+      }
 
       case ExplosionState.FADING:
         if (explosionElapsed >= this.fadeDuration) {
