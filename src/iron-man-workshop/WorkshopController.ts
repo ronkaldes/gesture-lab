@@ -41,6 +41,7 @@ import {
 import { HandLandmarkOverlay } from './components/HandLandmarkOverlay';
 import { ExplodedViewManager } from './components/ExplodedViewManager';
 import { ParticleTrailSystem } from './components/ParticleTrailEmitter';
+import { calculateHandRoll } from '../utils/math';
 import gsap from 'gsap';
 
 /**
@@ -124,6 +125,13 @@ export class WorkshopController {
   private lastLeftHandPose: 'open' | 'fist' | 'unknown' = 'unknown';
   private leftHandGestureCooldownMs: number = 800;
   private lastLeftHandGestureTime: number = 0;
+
+  // Left-hand wrist rotation state for twist-to-rotate in exploded view
+  // Roll (twist) controls Y-axis, palm Y position controls X-axis
+  private leftHandLastRoll: number | null = null;
+  private leftHandRollSmoothed: number = 0;
+  private leftHandLastPalmY: number | null = null;
+  private leftHandPalmYSmoothed: number = 0;
 
   // Camera animation state
   private baseCameraZ: number = 5;
@@ -580,6 +588,9 @@ export class WorkshopController {
 
     // Detect left-hand gesture for exploded view toggle
     this.detectLeftHandGesture();
+
+    // Apply left-hand wrist rotation when in exploded state
+    this.updateLeftHandWristRotation();
   }
 
   /**
@@ -678,12 +689,132 @@ export class WorkshopController {
         console.log('[WorkshopController] Left hand CLOSED FIST -> ASSEMBLE');
         this.lastLeftHandGestureTime = now;
         this.explodedViewManager.assemble();
+
+        // Reset rotation to original facing (animated via smooth interpolation in update loop)
+        this.schematicTargetRotation.set(0, -Math.PI / 2, 0);
+        this.rotationVelocity = { x: 0, y: 0 };
       }
     }
 
     if (currentPose !== 'unknown') {
       this.lastLeftHandPose = currentPose;
     }
+  }
+
+  /**
+   * Detect left-hand wrist twist and palm movement, apply rotation to schematic
+   *
+   * This feature is ONLY active when:
+   * 1. The schematic is in 'exploded' state
+   * 2. The left hand is detected with an open palm
+   *
+   * Wrist roll (twist) -> Y-axis rotation (left/right)
+   * Palm Y position (up/down movement) -> X-axis rotation (matching right hand)
+   */
+  private updateLeftHandWristRotation(): void {
+    // Only active in exploded state
+    if (this.explodedViewManager?.getState() !== 'exploded') {
+      this.leftHandLastRoll = null;
+      this.leftHandLastPalmY = null;
+      return;
+    }
+
+    // Only active when left hand palm is open (not a fist)
+    if (this.lastLeftHandPose !== 'open') {
+      this.leftHandLastRoll = null;
+      this.leftHandLastPalmY = null;
+      return;
+    }
+
+    const result = this.handTracker.getLastResult();
+    if (!result || result.landmarks.length === 0) {
+      this.leftHandLastRoll = null;
+      this.leftHandLastPalmY = null;
+      return;
+    }
+
+    // Find left hand
+    let leftHandIndex = -1;
+    if (result.handedness) {
+      for (let i = 0; i < result.handedness.length; i++) {
+        if (result.handedness[i]?.[0]?.categoryName === 'Left') {
+          leftHandIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (leftHandIndex === -1) {
+      this.leftHandLastRoll = null;
+      this.leftHandLastPalmY = null;
+      return;
+    }
+
+    const landmarks = result.landmarks[leftHandIndex];
+    const wrist = landmarks[0]; // Wrist
+    const indexMCP = landmarks[5]; // Index finger MCP
+    const middleMCP = landmarks[9]; // Middle finger MCP
+    const pinkyMCP = landmarks[17]; // Pinky MCP
+
+    // Calculate current roll angle (for Y-axis rotation)
+    const currentRoll = calculateHandRoll(indexMCP, pinkyMCP);
+
+    // Calculate palm center Y position (for X-axis rotation, matching right hand)
+    // Use average of wrist and middle MCP for stable palm center
+    const currentPalmY = (wrist.y + middleMCP.y) / 2;
+
+    // If this is the first frame with valid data, initialize smoothed values
+    // This prevents wild deltas when tracking starts (smoothed was 0, actual is ~0.5)
+    if (this.leftHandLastRoll === null || this.leftHandLastPalmY === null) {
+      this.leftHandRollSmoothed = currentRoll;
+      this.leftHandPalmYSmoothed = currentPalmY;
+      this.leftHandLastRoll = currentRoll;
+      this.leftHandLastPalmY = currentPalmY;
+      return;
+    }
+
+    // Smoothing for jitter reduction (lower = smoother)
+    const SMOOTHING = 0.15;
+    this.leftHandRollSmoothed =
+      this.leftHandRollSmoothed * (1 - SMOOTHING) + currentRoll * SMOOTHING;
+    this.leftHandPalmYSmoothed =
+      this.leftHandPalmYSmoothed * (1 - SMOOTHING) + currentPalmY * SMOOTHING;
+
+    // Calculate delta from previous frame
+    let rollDelta = this.leftHandRollSmoothed - this.leftHandLastRoll;
+    const palmYDelta = this.leftHandPalmYSmoothed - this.leftHandLastPalmY;
+
+    // Handle wrap-around at ±π boundary for roll
+    if (rollDelta > Math.PI) rollDelta -= 2 * Math.PI;
+    if (rollDelta < -Math.PI) rollDelta += 2 * Math.PI;
+
+    // Dead zone to ignore tiny jittery movements
+    const ROLL_DEAD_ZONE = 0.008; // ~0.5 degrees for roll
+    const POSITION_DEAD_ZONE = 0.003; // Small threshold for position
+    const filteredRollDelta =
+      Math.abs(rollDelta) < ROLL_DEAD_ZONE ? 0 : rollDelta;
+    const filteredPalmYDelta =
+      Math.abs(palmYDelta) < POSITION_DEAD_ZONE ? 0 : palmYDelta;
+
+    // Apply rotation to schematic
+    // Roll twist -> Y-axis rotation
+    const ROLL_SENSITIVITY = 2.0;
+    this.schematicTargetRotation.y += filteredRollDelta * ROLL_SENSITIVITY;
+
+    // Palm Y movement -> X-axis rotation (inverted: moving hand up tilts schematic back)
+    // Scale similar to right hand: palmYDelta is in normalized coords [0-1]
+    const POSITION_SENSITIVITY = 3.0;
+    this.schematicTargetRotation.x += filteredPalmYDelta * POSITION_SENSITIVITY;
+
+    // Clamp X rotation to prevent flipping
+    this.schematicTargetRotation.x = Math.max(
+      -Math.PI / 3,
+      Math.min(Math.PI / 3, this.schematicTargetRotation.x)
+    );
+
+    // Update last values for next frame
+    this.leftHandLastRoll = this.leftHandRollSmoothed;
+    this.leftHandLastPalmY = this.leftHandPalmYSmoothed;
   }
 
   /**

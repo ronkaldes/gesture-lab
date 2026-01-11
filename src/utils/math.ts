@@ -202,3 +202,54 @@ export function mapDistanceToScale(
   const normalized = (clamped - minDist) / (maxDist - minDist);
   return smoothStep(normalized);
 }
+
+/**
+ * Calculate hand roll (wrist pronation/supination) from landmarks
+ *
+ * The roll is computed by measuring the angle of the line from pinky MCP to index MCP
+ * relative to the horizontal axis. This captures the twist of the palm surface.
+ *
+ * When the palm faces the camera flat, the knuckle line is roughly horizontal (roll ≈ 0).
+ * As the user twists their wrist (pronating/supinating), this line tilts.
+ *
+ * @param indexMCP - Index finger MCP landmark (landmark 5)
+ * @param pinkyMCP - Pinky MCP landmark (landmark 17)
+ * @returns Roll angle in radians (-π to π), positive = counter-clockwise twist
+ */
+export function calculateHandRoll(
+  indexMCP: NormalizedLandmark,
+  pinkyMCP: NormalizedLandmark
+): number {
+  // Vector from pinky MCP to index MCP represents palm width axis
+  const dx = indexMCP.x - pinkyMCP.x;
+  const dy = indexMCP.y - pinkyMCP.y;
+
+  // atan2 gives angle from horizontal axis
+  return Math.atan2(dy, dx);
+}
+
+/**
+ * Calculate hand pitch (forward/backward tilt) from landmarks
+ *
+ * The pitch is computed by measuring the angle of the line from wrist to middle MCP
+ * relative to the vertical axis. This captures the forward/backward tilt of the palm.
+ *
+ * When the palm faces the camera flat, this line is roughly vertical (pitch ≈ 0).
+ * As the user tilts their hand forward/backward, this line tilts.
+ *
+ * @param wrist - Wrist landmark (landmark 0)
+ * @param middleMCP - Middle finger MCP landmark (landmark 9)
+ * @returns Pitch angle in radians, positive = tilted forward (fingers pointing down)
+ */
+export function calculateHandPitch(
+  wrist: NormalizedLandmark,
+  middleMCP: NormalizedLandmark
+): number {
+  // Vector from wrist to middle MCP represents palm length axis
+  const dx = middleMCP.x - wrist.x;
+  const dy = middleMCP.y - wrist.y;
+
+  // atan2 gives angle from vertical axis (we measure from Y axis)
+  // Subtract PI/2 to make 0 = hand pointing up, positive = tilted forward
+  return Math.atan2(dx, -dy);
+}
