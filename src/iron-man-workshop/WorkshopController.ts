@@ -39,6 +39,9 @@ import {
   updateMarkVIModelCached,
 } from './components/MarkVIModel';
 import { HandLandmarkOverlay } from './components/HandLandmarkOverlay';
+import { ExplodedViewManager } from './components/ExplodedViewManager';
+import { ParticleTrailSystem } from './components/ParticleTrailEmitter';
+import gsap from 'gsap';
 
 /**
  * WorkshopController - Main controller for holographic mode
@@ -111,6 +114,20 @@ export class WorkshopController {
     THREE.BufferGeometry,
     THREE.ShaderMaterial
   >[] = [];
+
+  // Exploded View Feature
+  private explodedViewManager: ExplodedViewManager | null = null;
+  private particleTrailSystem: ParticleTrailSystem | null = null;
+
+  // Left-hand gesture detection for exploded view
+  // Open palm = explode, Closed fist = assemble
+  private lastLeftHandPose: 'open' | 'fist' | 'unknown' = 'unknown';
+  private leftHandGestureCooldownMs: number = 800;
+  private lastLeftHandGestureTime: number = 0;
+
+  // Camera animation state
+  private baseCameraZ: number = 5;
+  private targetCameraZ: number = 5;
 
   constructor(
     handTracker: HandTracker,
@@ -272,10 +289,131 @@ export class WorkshopController {
     loadPromise
       .then(() => {
         this.cacheSchematicShaderMeshes();
+        this.initializeExplodedView();
       })
       .catch((error) => {
         console.error('[WorkshopController] Model load failed:', error);
       });
+  }
+
+  /**
+   * Initialize the Exploded View system
+   * Sets up ExplodedViewManager, ParticleTrailSystem, and callbacks
+   */
+  private initializeExplodedView(): void {
+    if (!this.schematic) return;
+
+    // Create particle trail system
+    this.particleTrailSystem = new ParticleTrailSystem();
+    this.scene.add(this.particleTrailSystem.getObject3D());
+
+    // Create emitters for each moving limb with spectacular settings
+    const limbNames = [
+      'head',
+      'arm_left',
+      'arm_right',
+      'leg_left',
+      'leg_right',
+      'torso',
+    ];
+    limbNames.forEach((name) => {
+      this.particleTrailSystem!.createEmitter(name, {
+        maxParticles: 200, // Double density
+        lifetime: 1.0, // Longer trails for slower animation
+        particleSize: 0.12, // Much bigger for visibility
+        coreColor: new THREE.Color(0x00ffff),
+        fadeColor: new THREE.Color(0x002244),
+      });
+    });
+
+    // Create ExplodedViewManager with cinematic callbacks
+    this.explodedViewManager = new ExplodedViewManager({
+      animationDuration: 1.0,
+      enableSound: true,
+      enableParticles: true,
+
+      // Called when limb starts moving
+      onLimbMoveStart: (limbName, mesh) => {
+        // Start particle trail for this limb
+        const worldPos = new THREE.Vector3();
+        mesh.getWorldPosition(worldPos);
+        // Initial direction (will be updated per-frame based on velocity)
+        const direction = new THREE.Vector3(0, -1, 0);
+        this.particleTrailSystem?.startTrail(limbName, worldPos, direction);
+
+        // Intensify glow on moving limb
+        if (
+          mesh instanceof THREE.Mesh &&
+          mesh.material instanceof THREE.ShaderMaterial
+        ) {
+          gsap.to(mesh.material.uniforms.uOpacity, {
+            value: 0.9, // Brighter during motion
+            duration: 0.2,
+          });
+        }
+      },
+
+      // Called every frame during movement - KEY for particle trail following
+      onLimbMoveUpdate: (limbName, mesh, velocity) => {
+        const worldPos = new THREE.Vector3();
+        mesh.getWorldPosition(worldPos);
+        // Update particle trail position AND direction based on velocity
+        this.particleTrailSystem?.updateTrailWithVelocity(
+          limbName,
+          worldPos,
+          velocity
+        );
+      },
+
+      // Called when limb stops moving
+      onLimbMoveEnd: (limbName, mesh) => {
+        // Stop particle trail
+        this.particleTrailSystem?.stopTrail(limbName);
+
+        // Reset glow
+        if (
+          mesh instanceof THREE.Mesh &&
+          mesh.material instanceof THREE.ShaderMaterial
+        ) {
+          const baseOpacity = mesh.userData.baseOpacity ?? 0.4;
+          gsap.to(mesh.material.uniforms.uOpacity, {
+            value: baseOpacity,
+            duration: 0.15, // Faster fade out
+          });
+        }
+      },
+
+      // Called during anticipation phase - boost hologram intensity
+      onAnticipation: () => {
+        console.log('[WorkshopController] Anticipation phase - charging');
+        // Brief intense glow during anticipation
+        for (const mesh of this.schematicShaderMeshes) {
+          gsap.to(mesh.material.uniforms.uOpacity, {
+            value: 0.7,
+            duration: 0.1,
+            yoyo: true,
+            repeat: 1,
+          });
+        }
+      },
+
+      // Called on state changes
+      onStateChange: (newState) => {
+        // Camera zoom on state change
+        if (newState === 'exploding') {
+          this.targetCameraZ = this.baseCameraZ + 3.8; // Zoom out MORE (was 2.5)
+          this.intensifyHologramEffect(true);
+        } else if (newState === 'assembling') {
+          this.targetCameraZ = this.baseCameraZ; // Zoom back
+          this.intensifyHologramEffect(false);
+        }
+      },
+    });
+
+    // Initialize manager with schematic reference
+    this.explodedViewManager.initialize(this.schematic);
+
+    console.log('[WorkshopController] ExplodedView system initialized');
   }
 
   /**
@@ -430,6 +568,155 @@ export class WorkshopController {
       // Keep position centered
       this.schematic.position.set(0, 0, 0);
     }
+
+    // Update particle trail system
+    this.particleTrailSystem?.update(deltaTime);
+
+    // Smooth camera zoom animation
+    const cameraZDiff = this.targetCameraZ - this.camera.position.z;
+    if (Math.abs(cameraZDiff) > 0.01) {
+      this.camera.position.z += cameraZDiff * 0.08;
+    }
+
+    // Detect left-hand gesture for exploded view toggle
+    this.detectLeftHandGesture();
+  }
+
+  /**
+   * Detect left-hand gesture to trigger explode/assemble
+   * Open palm on left hand = explode (fingers extended)
+   * Closed fist on left hand = assemble (fingers curled)
+   *
+   * Uses MediaPipe handedness detection to identify left hand specifically.
+   */
+  private detectLeftHandGesture(): void {
+    const result = this.handTracker.getLastResult();
+    if (!result || result.landmarks.length === 0) {
+      return;
+    }
+
+    // Find the left hand using handedness info
+    let leftHandIndex = -1;
+    if (result.handedness) {
+      for (let i = 0; i < result.handedness.length; i++) {
+        // MediaPipe returns actual anatomical handedness: "Left" = user's left hand
+        if (result.handedness[i]?.[0]?.categoryName === 'Left') {
+          leftHandIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (leftHandIndex === -1) {
+      // No left hand detected
+      return;
+    }
+
+    const landmarks = result.landmarks[leftHandIndex];
+
+    // Calculate if hand is open (fingers extended) or closed (fist)
+    // We measure the distance from fingertips to palm center
+    // For a fist, fingertips are close to palm; for open palm, they're far
+
+    // Key landmarks:
+    // 0: wrist, 5: index MCP (palm), 9: middle MCP (palm)
+    // 8: index tip, 12: middle tip, 16: ring tip, 20: pinky tip
+
+    const palmCenter = {
+      x: (landmarks[5].x + landmarks[9].x + landmarks[0].x) / 3,
+      y: (landmarks[5].y + landmarks[9].y + landmarks[0].y) / 3,
+    };
+
+    // Calculate average distance from fingertips to palm center
+    const fingerTips = [
+      landmarks[8],
+      landmarks[12],
+      landmarks[16],
+      landmarks[20],
+    ];
+    let totalDistance = 0;
+    for (const tip of fingerTips) {
+      const dx = tip.x - palmCenter.x;
+      const dy = tip.y - palmCenter.y;
+      totalDistance += Math.sqrt(dx * dx + dy * dy);
+    }
+    const avgFingerDistance = totalDistance / fingerTips.length;
+
+    // Thresholds (in normalized coordinates)
+    // Open palm: fingers far from palm (> 0.15)
+    // Closed fist: fingers close to palm (< 0.08)
+    const OPEN_THRESHOLD = 0.12;
+    const CLOSED_THRESHOLD = 0.08;
+
+    let currentPose: 'open' | 'fist' | 'unknown' = 'unknown';
+    if (avgFingerDistance > OPEN_THRESHOLD) {
+      currentPose = 'open';
+    } else if (avgFingerDistance < CLOSED_THRESHOLD) {
+      currentPose = 'fist';
+    }
+
+    // Check for state transition
+    const now = performance.now();
+    if (now - this.lastLeftHandGestureTime < this.leftHandGestureCooldownMs) {
+      // Still in cooldown
+      return;
+    }
+
+    // Trigger based on pose change
+    if (currentPose !== this.lastLeftHandPose && currentPose !== 'unknown') {
+      if (
+        currentPose === 'open' &&
+        this.explodedViewManager?.getState() === 'assembled'
+      ) {
+        console.log('[WorkshopController] Left hand OPEN PALM -> EXPLODE');
+        this.lastLeftHandGestureTime = now;
+        this.explodedViewManager.explode();
+      } else if (
+        currentPose === 'fist' &&
+        this.explodedViewManager?.getState() === 'exploded'
+      ) {
+        console.log('[WorkshopController] Left hand CLOSED FIST -> ASSEMBLE');
+        this.lastLeftHandGestureTime = now;
+        this.explodedViewManager.assemble();
+      }
+    }
+
+    if (currentPose !== 'unknown') {
+      this.lastLeftHandPose = currentPose;
+    }
+  }
+
+  /**
+   * Intensify holographic effects during explosion/assembly animation
+   * Increases scanline frequency and fresnel glow for cinematic shimmer
+   */
+  private intensifyHologramEffect(intensify: boolean): void {
+    const targetScanlineMultiplier = intensify ? 1.5 : 1.0;
+    const targetFresnelMultiplier = intensify ? 1.3 : 1.0;
+
+    for (const mesh of this.schematicShaderMeshes) {
+      // Store base values if not already stored
+      if (mesh.userData.baseScanlineFreq === undefined) {
+        mesh.userData.baseScanlineFreq =
+          mesh.material.uniforms.uScanlineFrequency.value;
+      }
+      if (mesh.userData.baseFresnelPower === undefined) {
+        mesh.userData.baseFresnelPower =
+          mesh.material.uniforms.uFresnelPower.value;
+      }
+
+      // Animate to intensified/normal values
+      gsap.to(mesh.material.uniforms.uScanlineFrequency, {
+        value: mesh.userData.baseScanlineFreq * targetScanlineMultiplier,
+        duration: 0.4,
+        ease: 'power2.out',
+      });
+      gsap.to(mesh.material.uniforms.uFresnelPower, {
+        value: mesh.userData.baseFresnelPower * targetFresnelMultiplier,
+        duration: 0.4,
+        ease: 'power2.out',
+      });
+    }
   }
 
   /**
@@ -465,6 +752,19 @@ export class WorkshopController {
     for (let handIndex = 0; handIndex < result.landmarks.length; handIndex++) {
       detectedHandIndices.add(handIndex);
       const landmarks = result.landmarks[handIndex];
+
+      // Check handedness - only RIGHT hand can pinch-to-rotate
+      // Left hand is reserved for fist/palm gesture (explode/assemble)
+      let isRightHand = false;
+      if (result.handedness && result.handedness[handIndex]) {
+        isRightHand =
+          result.handedness[handIndex]?.[0]?.categoryName === 'Right';
+      }
+
+      // Skip pinch-to-rotate processing for left hand
+      if (!isRightHand) {
+        continue;
+      }
 
       // Key landmarks for manipulation
       const thumbTip = landmarks[4];
@@ -863,6 +1163,14 @@ export class WorkshopController {
    * Clean up and dispose resources
    */
   dispose(): void {
+    // Dispose exploded view system
+    this.explodedViewManager?.dispose();
+    this.explodedViewManager = null;
+
+    // Dispose particle trail system
+    this.particleTrailSystem?.dispose();
+    this.particleTrailSystem = null;
+
     // Dispose hand landmark overlay
     this.handLandmarkOverlay?.dispose();
     this.handLandmarkOverlay = null;

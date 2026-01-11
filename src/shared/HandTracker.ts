@@ -56,34 +56,66 @@ export class HandTracker {
   }
 
   /**
+   * Static shared instance to prevent multiple WASM heaps (OOM fix)
+   */
+  private static sharedHandLandmarker: HandLandmarker | null = null;
+  private static initializationPromise: Promise<void> | null = null;
+
+  /**
    * Initialize MediaPipe Tasks Vision HandLandmarker
    */
   private async initializeHandLandmarker(): Promise<void> {
+    // If we already have a shared instance, reuse it
+    if (HandTracker.sharedHandLandmarker) {
+      this.handLandmarker = HandTracker.sharedHandLandmarker;
+      console.log('[HandTracker] Reusing shared HandLandmarker instance');
+      return;
+    }
+
+    // If initialization is in progress, wait for it
+    if (HandTracker.initializationPromise) {
+      await HandTracker.initializationPromise;
+      if (HandTracker.sharedHandLandmarker) {
+        this.handLandmarker = HandTracker.sharedHandLandmarker;
+        return;
+      }
+    }
+
     try {
-      // Step 1: Load WASM runtime
-      const vision = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+      // Start initialization lock
+      HandTracker.initializationPromise = (async () => {
+        // Step 1: Load WASM runtime
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+        );
+
+        // Step 2: Create HandLandmarker with configuration
+        HandTracker.sharedHandLandmarker =
+          await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: this.config.modelAssetPath,
+              delegate: this.config.delegate,
+            },
+            runningMode: 'VIDEO',
+            numHands: this.config.numHands,
+            minHandDetectionConfidence: this.config.minHandDetectionConfidence,
+            minHandPresenceConfidence: this.config.minHandPresenceConfidence,
+            minTrackingConfidence: this.config.minTrackingConfidence,
+          });
+      })();
+
+      await HandTracker.initializationPromise;
+      this.handLandmarker = HandTracker.sharedHandLandmarker;
+
+      console.log(
+        '[HandTracker] MediaPipe HandLandmarker initialized (New Instance)'
       );
-
-      // Step 2: Create HandLandmarker with configuration
-      this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: this.config.modelAssetPath,
-          delegate: this.config.delegate,
-        },
-        runningMode: 'VIDEO',
-        numHands: this.config.numHands,
-        minHandDetectionConfidence: this.config.minHandDetectionConfidence,
-        minHandPresenceConfidence: this.config.minHandPresenceConfidence,
-        minTrackingConfidence: this.config.minTrackingConfidence,
-      });
-
-      console.log('[HandTracker] MediaPipe HandLandmarker initialized');
     } catch (error) {
       console.error(
         '[HandTracker] Failed to initialize HandLandmarker:',
         error
       );
+      HandTracker.initializationPromise = null; // Reset on failure
       throw new Error(`MediaPipe initialization failed: ${error}`);
     }
   }
@@ -226,6 +258,14 @@ export class HandTracker {
   }
 
   /**
+   * Get the last detection result
+   * Useful for accessing cached results without re-running detection
+   */
+  getLastResult(): HandLandmarkerResult | null {
+    return this.lastResult;
+  }
+
+  /**
    * Get the video element dimensions
    */
   getVideoDimensions(): { width: number; height: number } | null {
@@ -247,10 +287,13 @@ export class HandTracker {
     }
 
     // Close HandLandmarker
-    if (this.handLandmarker) {
-      this.handLandmarker.close();
-      this.handLandmarker = null;
-    }
+    // FIX: Do NOT close the shared instance, as other components or reloads might need it.
+    // The WASM heap is expensive and should persist.
+    // Only cleanup local references.
+    this.handLandmarker = null;
+
+    // Note: If we really needed to nuke everything, we would add a static destroy() method.
+    // But for this use case, keeping the WASM loaded is better for performance and preventing OOM.
 
     // Clear video element
     if (this.videoElement) {

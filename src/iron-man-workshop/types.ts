@@ -46,3 +46,12 @@ export interface WorkshopDebugInfo {
   /** Current grab target: 'body' or null */
   grabTarget: string | null;
 }
+
+/**
+ * Animation states for the Exploded View feature
+ */
+export type ExplodedViewState =
+  | 'assembled'
+  | 'exploding'
+  | 'exploded'
+  | 'assembling';

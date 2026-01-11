@@ -26,7 +26,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
-// Import articulated GLB model
+// Import articulated GLB model with properly separated limbs
 import modelUrl from '../assets/mark-vi-articulated.glb?url';
 
 export interface MarkVIModelConfig {
