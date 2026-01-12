@@ -411,9 +411,12 @@ export class WorkshopController {
         if (newState === 'exploding') {
           this.targetCameraZ = this.baseCameraZ + 3.8; // Zoom out MORE (was 2.5)
           this.intensifyHologramEffect(true);
+          this.animateRingsVisibility(false); // Fade out rings during explosion
         } else if (newState === 'assembling') {
           this.targetCameraZ = this.baseCameraZ; // Zoom back
           this.intensifyHologramEffect(false);
+        } else if (newState === 'assembled') {
+          this.animateRingsVisibility(true); // Fade in rings after reassembly
         }
       },
     });
@@ -848,6 +851,50 @@ export class WorkshopController {
         ease: 'power2.out',
       });
     }
+  }
+
+  /**
+   * Animate ring visibility during explosion/assembly
+   * Fades rings out when exploding, back in when assembled
+   */
+  private animateRingsVisibility(visible: boolean): void {
+    if (!this.rings) return;
+
+    this.rings.children.forEach((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const material = child.material;
+
+        // Store original opacity on first call
+        if (child.userData.originalOpacity === undefined) {
+          child.userData.originalOpacity =
+            material instanceof THREE.ShaderMaterial
+              ? material.uniforms?.uOpacity?.value ?? 0.5
+              : (material as THREE.MeshBasicMaterial).opacity ?? 0.5;
+        }
+
+        const targetOpacity = visible ? child.userData.originalOpacity : 0;
+        const duration = visible ? 0.6 : 0.8;
+        const ease = visible ? 'power2.out' : 'power2.inOut';
+
+        // Animate shader uniform or basic material opacity
+        if (
+          material instanceof THREE.ShaderMaterial &&
+          material.uniforms?.uOpacity
+        ) {
+          gsap.to(material.uniforms.uOpacity, {
+            value: targetOpacity,
+            duration,
+            ease,
+          });
+        } else if ('opacity' in material) {
+          gsap.to(material, {
+            opacity: targetOpacity,
+            duration,
+            ease,
+          });
+        }
+      }
+    });
   }
 
   /**
