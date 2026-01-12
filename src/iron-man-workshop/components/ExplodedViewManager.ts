@@ -292,6 +292,39 @@ export class ExplodedViewManager {
   }
 
   /**
+   * Get a limb mesh by name
+   * Used by WorkshopController for direct manipulation during exploded grab
+   */
+  getLimbMesh(limbType: LimbType): THREE.Object3D | undefined {
+    return this.limbMeshes.get(limbType);
+  }
+
+  /**
+   * Pause levitation for a specific limb (when being grabbed)
+   * This prevents the bobbing animation from conflicting with user manipulation
+   */
+  pauseLevitationForLimb(limbType: LimbType): void {
+    // The levitation timeline animates all limbs together
+    // For simplicity, we pause the entire levitation when any limb is grabbed
+    if (this.levitationTimeline && !this.levitationTimeline.paused()) {
+      this.levitationTimeline.pause();
+      console.log(
+        `[ExplodedViewManager] Paused levitation for limb grab: ${limbType}`
+      );
+    }
+  }
+
+  /**
+   * Resume levitation after limb is released
+   */
+  resumeLevitation(): void {
+    if (this.levitationTimeline && this.levitationTimeline.paused()) {
+      this.levitationTimeline.resume();
+      console.log('[ExplodedViewManager] Resumed levitation after limb release');
+    }
+  }
+
+  /**
    * Explode the suit - limbs fly outward from torso
    *
    * Cinematic 3-phase animation:

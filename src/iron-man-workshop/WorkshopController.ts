@@ -88,8 +88,15 @@ export class WorkshopController {
     number,
     {
       isGrabbing: boolean;
-      grabTarget: 'body' | null;
+      grabTarget: 'body' | 'limb' | null;
+      grabbedLimbType: LimbType | null; // The specific limb being grabbed (exploded mode only)
+      grabbedLimbMesh: THREE.Object3D | null; // Reference to the grabbed limb mesh
       grabStartHandPosition: THREE.Vector3 | null;
+      grabStartLimbPosition: THREE.Vector3 | null; // Original position of grabbed limb
+      grabStartLimbRotation: THREE.Euler | null; // Original rotation of grabbed limb
+      grabStartWristRoll: number | null; // Initial wrist roll when grab started
+      lastWristRoll: number | null; // Previous frame's wrist roll (for smoothing)
+      smoothedWristRoll: number; // Smoothed wrist roll value
       grabStartRotation: THREE.Euler;
       lastHandPosition: THREE.Vector3 | null; // For incremental delta
       // Per-hand raycast throttling state
@@ -993,7 +1000,14 @@ export class WorkshopController {
         handState = {
           isGrabbing: false,
           grabTarget: null,
+          grabbedLimbType: null,
+          grabbedLimbMesh: null,
           grabStartHandPosition: null,
+          grabStartLimbPosition: null,
+          grabStartLimbRotation: null,
+          grabStartWristRoll: null,
+          lastWristRoll: null,
+          smoothedWristRoll: 0,
           grabStartRotation: new THREE.Euler(),
           lastHandPosition: null, // For incremental delta
           lastRaycastTime: 0,
@@ -1116,23 +1130,64 @@ export class WorkshopController {
               if (userData?.isHitVolume === true) {
                 // === GRAB START ===
                 handState.isGrabbing = true;
-
-                // Determine what was grabbed
-                // For now, treat everything as 'body' regarding rotation behavior
-                // In the future, we can check userData.limbType for specific limb manipulation
-                handState.grabTarget = 'body';
-
-                // Store the specific limb we grabbed for potential future use
-                console.log(
-                  `[WorkshopController] Hand ${handIndex} grabbed ${
-                    userData.limbType || 'body'
-                  }`
-                );
-
                 handState.grabStartHandPosition = handPosition.clone();
-                handState.grabStartRotation.copy(this.schematic.rotation);
-                // Reset velocity on new grab
-                this.rotationVelocity = { x: 0, y: 0 };
+
+                // Check if we're in exploded mode - enables limb grabbing
+                const isExploded =
+                  this.explodedViewManager?.getState() === 'exploded';
+
+                if (isExploded && userData.limbType) {
+                  // === EXPLODED MODE: Grab individual limb ===
+                  const limbType = userData.limbType as LimbType;
+                  const limbMesh =
+                    this.explodedViewManager?.getLimbMesh(limbType);
+
+                  if (limbMesh) {
+                    handState.grabTarget = 'limb';
+                    handState.grabbedLimbType = limbType;
+                    handState.grabbedLimbMesh = limbMesh;
+                    handState.grabStartLimbPosition = limbMesh.position.clone();
+                    handState.grabStartLimbRotation = limbMesh.rotation.clone();
+
+                    // Capture initial wrist roll for rotation tracking
+                    const indexMCP = landmarks[5];
+                    const pinkyMCP = landmarks[17];
+                    const initialRoll = calculateHandRoll(indexMCP, pinkyMCP);
+                    handState.grabStartWristRoll = initialRoll;
+                    handState.lastWristRoll = initialRoll;
+                    handState.smoothedWristRoll = initialRoll;
+
+                    // Pause levitation animation to prevent conflicts
+                    this.explodedViewManager?.pauseLevitationForLimb(limbType);
+
+                    console.log(
+                      `[WorkshopController] Hand ${handIndex} grabbed limb: ${limbType}`
+                    );
+                  } else {
+                    // Fallback to body rotation if limb mesh not found
+                    handState.grabTarget = 'body';
+                    handState.grabbedLimbType = null;
+                    handState.grabbedLimbMesh = null;
+                    handState.grabStartLimbPosition = null;
+                    handState.grabStartRotation.copy(this.schematic.rotation);
+                    this.rotationVelocity = { x: 0, y: 0 };
+                    console.log(
+                      `[WorkshopController] Hand ${handIndex} fallback to body (limb mesh not found)`
+                    );
+                  }
+                } else {
+                  // === ASSEMBLED MODE: Rotate whole schematic ===
+                  handState.grabTarget = 'body';
+                  handState.grabbedLimbType = null;
+                  handState.grabbedLimbMesh = null;
+                  handState.grabStartLimbPosition = null;
+                  handState.grabStartRotation.copy(this.schematic.rotation);
+                  this.rotationVelocity = { x: 0, y: 0 };
+
+                  console.log(
+                    `[WorkshopController] Hand ${handIndex} grabbed body for rotation`
+                  );
+                }
 
                 foundTarget = true;
                 anyHandHovering = true;
@@ -1145,7 +1200,56 @@ export class WorkshopController {
           }
         } else {
           // === CONTINUE GRABBING ===
-          if (
+          if (handState.grabTarget === 'limb' && handState.grabStartHandPosition) {
+            // === LIMB MOVEMENT & ROTATION (Exploded Mode) ===
+            if (
+              handState.grabbedLimbMesh &&
+              handState.grabStartLimbPosition &&
+              handState.grabStartLimbRotation &&
+              handState.grabStartWristRoll !== null
+            ) {
+              const deltaX = handPosition.x - handState.grabStartHandPosition.x;
+              const deltaY = handPosition.y - handState.grabStartHandPosition.y;
+
+              // Move the limb based on hand movement
+              // Scale the movement to feel natural (hand movement maps to limb movement)
+              const movementScale = 0.5; // Adjust for sensitivity
+              handState.grabbedLimbMesh.position.x =
+                handState.grabStartLimbPosition.x + deltaX * movementScale;
+              handState.grabbedLimbMesh.position.y =
+                handState.grabStartLimbPosition.y + deltaY * movementScale;
+
+              // === WRIST TWIST ROTATION ===
+              // Calculate current wrist roll and apply to limb rotation
+              const indexMCP = landmarks[5];
+              const pinkyMCP = landmarks[17];
+              const currentRoll = calculateHandRoll(indexMCP, pinkyMCP);
+
+              // Smooth the roll value to reduce jitter
+              const ROLL_SMOOTHING = 0.25;
+              handState.smoothedWristRoll =
+                handState.smoothedWristRoll * (1 - ROLL_SMOOTHING) +
+                currentRoll * ROLL_SMOOTHING;
+
+              // Calculate roll delta from initial grab position
+              let rollDelta =
+                handState.smoothedWristRoll - handState.grabStartWristRoll;
+
+              // Handle wrap-around at ±π boundary
+              if (rollDelta > Math.PI) rollDelta -= 2 * Math.PI;
+              if (rollDelta < -Math.PI) rollDelta += 2 * Math.PI;
+
+              // Apply roll to limb Y-axis rotation (twist around vertical axis)
+              // Sensitivity: how much wrist twist translates to limb rotation
+              const ROTATION_SENSITIVITY = 2.5;
+              handState.grabbedLimbMesh.rotation.y =
+                handState.grabStartLimbRotation.y +
+                rollDelta * ROTATION_SENSITIVITY;
+
+              // Update last roll for next frame
+              handState.lastWristRoll = handState.smoothedWristRoll;
+            }
+          } else if (
             handState.grabTarget === 'body' &&
             handState.grabStartHandPosition
           ) {
@@ -1186,9 +1290,20 @@ export class WorkshopController {
         }
       } else {
         // Not pinching - release grab
+        // Resume levitation if we were grabbing a limb
+        if (handState.grabTarget === 'limb' && handState.grabbedLimbType) {
+          this.explodedViewManager?.resumeLevitation();
+        }
+
         handState.isGrabbing = false;
         handState.grabTarget = null;
+        handState.grabbedLimbType = null;
+        handState.grabbedLimbMesh = null;
         handState.grabStartHandPosition = null;
+        handState.grabStartLimbPosition = null;
+        handState.grabStartLimbRotation = null;
+        handState.grabStartWristRoll = null;
+        handState.lastWristRoll = null;
 
         // Check for hover
         if (this.schematic) {
