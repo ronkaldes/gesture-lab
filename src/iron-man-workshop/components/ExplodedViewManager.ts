@@ -604,10 +604,20 @@ export class ExplodedViewManager {
 
         if (!mesh || !originalState) continue;
 
-        // Calculate Bezier points
+        // Calculate Bezier points for assembly animation:
+        // - p0: Target (original assembled position)
+        // - p2: Current position (where the mesh actually is now - may have been moved by user)
+        // - p1: Control point for curve arc (computed dynamically)
         const p0 = originalState.position.clone();
-        const p2 = p0.clone().add(explosionConfig.targetOffset);
-        const p1 = p0.clone().add(explosionConfig.controlOffset);
+        const p2 = mesh.position.clone(); // Use CURRENT position, not config offset
+
+        // Compute a control point that creates a nice arc between current and target positions.
+        // Use the midpoint raised slightly along the explosion control offset direction for visual consistency.
+        const midpoint = p0.clone().add(p2).multiplyScalar(0.5);
+        // Add a fraction of the original control offset to create an arc (scaled down for subtlety)
+        const p1 = midpoint.add(
+          explosionConfig.controlOffset.clone().multiplyScalar(0.5)
+        );
 
         const velocityMultiplier = LIMB_VELOCITY_MULTIPLIER[limbName];
 
