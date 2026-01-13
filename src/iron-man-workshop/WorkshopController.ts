@@ -133,6 +133,19 @@ export class WorkshopController {
   // Performance optimization: Raycaster throttling
   private readonly RAYCAST_INTERVAL_MS: number = 100; // 10Hz raycasting
 
+  // Performance optimization: Pre-allocated temp objects to avoid per-frame GC pressure
+  private readonly _tempWorldPos: THREE.Vector3 = new THREE.Vector3();
+  private readonly _tempDirection: THREE.Vector3 = new THREE.Vector3();
+  private readonly _tempHandPosition: THREE.Vector3 = new THREE.Vector3();
+  private readonly _tempRawTargetPosition: THREE.Vector3 = new THREE.Vector3();
+  private readonly _tempNdc: THREE.Vector2 = new THREE.Vector2();
+  private readonly _hoverBaseColor: THREE.Color = new THREE.Color(0x00ff88);
+  private readonly _hoverHighlightColor: THREE.Color = new THREE.Color(0xffbf00);
+
+  // Performance optimization: Info panel raycast throttling
+  private lastInfoPanelRaycastTime: number = 0;
+  private cachedInfoPanelIntersects: THREE.Intersection[] = [];
+
   // Performance optimization: Cached schematic shader meshes
   private schematicShaderMeshes: THREE.Mesh<
     THREE.BufferGeometry,
@@ -377,12 +390,11 @@ export class WorkshopController {
 
       // Called when limb starts moving
       onLimbMoveStart: (limbName, mesh) => {
-        // Start particle trail for this limb
-        const worldPos = new THREE.Vector3();
-        mesh.getWorldPosition(worldPos);
+        // Start particle trail for this limb (using pre-allocated temps)
+        mesh.getWorldPosition(this._tempWorldPos);
         // Initial direction (will be updated per-frame based on velocity)
-        const direction = new THREE.Vector3(0, -1, 0);
-        this.particleTrailSystem?.startTrail(limbName, worldPos, direction);
+        this._tempDirection.set(0, -1, 0);
+        this.particleTrailSystem?.startTrail(limbName, this._tempWorldPos, this._tempDirection);
 
         // Intensify glow on moving limb
         if (
@@ -392,18 +404,18 @@ export class WorkshopController {
           gsap.to(mesh.material.uniforms.uOpacity, {
             value: 0.9, // Brighter during motion
             duration: 0.2,
+            overwrite: true,
           });
         }
       },
 
       // Called every frame during movement - KEY for particle trail following
       onLimbMoveUpdate: (limbName, mesh, velocity) => {
-        const worldPos = new THREE.Vector3();
-        mesh.getWorldPosition(worldPos);
+        mesh.getWorldPosition(this._tempWorldPos);
         // Update particle trail position AND direction based on velocity
         this.particleTrailSystem?.updateTrailWithVelocity(
           limbName,
-          worldPos,
+          this._tempWorldPos,
           velocity
         );
       },
@@ -422,6 +434,7 @@ export class WorkshopController {
           gsap.to(mesh.material.uniforms.uOpacity, {
             value: baseOpacity,
             duration: 0.15, // Faster fade out
+            overwrite: true,
           });
         }
       },
@@ -436,6 +449,7 @@ export class WorkshopController {
             duration: 0.1,
             yoyo: true,
             repeat: 1,
+            overwrite: true,
           });
         }
       },
@@ -522,7 +536,9 @@ export class WorkshopController {
     if (!this.isRunning) return;
 
     const timestamp = performance.now();
-    const deltaTime = (timestamp - this.lastTimestamp) / 1000;
+    // Cap deltaTime to prevent physics explosions when tab is backgrounded/resumed
+    // Max 50ms (20fps minimum) prevents large jumps in animation/physics
+    const deltaTime = Math.min((timestamp - this.lastTimestamp) / 1000, 0.05);
     this.lastTimestamp = timestamp;
 
     // Update FPS counter
@@ -925,11 +941,13 @@ export class WorkshopController {
         value: mesh.userData.baseScanlineFreq * targetScanlineMultiplier,
         duration: 0.4,
         ease: 'power2.out',
+        overwrite: true,
       });
       gsap.to(mesh.material.uniforms.uFresnelPower, {
         value: mesh.userData.baseFresnelPower * targetFresnelMultiplier,
         duration: 0.4,
         ease: 'power2.out',
+        overwrite: true,
       });
     }
   }
@@ -966,12 +984,14 @@ export class WorkshopController {
             value: targetOpacity,
             duration,
             ease,
+            overwrite: true,
           });
         } else if ('opacity' in material) {
           gsap.to(material, {
             opacity: targetOpacity,
             duration,
             ease,
+            overwrite: true,
           });
         }
       }
@@ -1036,12 +1056,13 @@ export class WorkshopController {
       const palmX = (wrist.x + indexBase.x) / 2;
       const palmY = (wrist.y + indexBase.y) / 2;
 
-      // Convert normalized coordinates to 3D world space
-      const handPosition = new THREE.Vector3(
+      // Convert normalized coordinates to 3D world space (using pre-allocated temp)
+      this._tempHandPosition.set(
         (0.5 - palmX) * 6,
         (0.5 - palmY) * 4,
         0
       );
+      const handPosition = this._tempHandPosition;
 
       // Calculate pinch distance
       const pinchDistance = Math.sqrt(
@@ -1085,43 +1106,39 @@ export class WorkshopController {
       // Check specifically for index finger pointing (not pinching)
       if (isRightHand) {
         if (!handState.isGrabbing && !isPinching) {
-          // Calculate index finger extension for stability
-          // (Similar to left hand open palm check but just for index)
-          // Ensure index is extended and not curled
-          // const isIndexExtended = true; // TODO: Add better pose check if needed
-
           // We use the index tip for the raycast origin
           const ndcX = (1 - indexTip.x) * 2 - 1;
           const ndcY = -(indexTip.y * 2 - 1);
 
-          // Raycast specific to info panel (different interval perhaps?)
-          // Reuse the existing raycaster
-          this.raycaster.setFromCamera(
-            new THREE.Vector2(ndcX, ndcY),
-            this.camera
-          );
-
-          // Raycast against hit volumes
+          // Raycast against hit volumes (throttled for performance)
           if (this.schematic) {
             const hitVolumes = this.schematic.userData.hitVolumes as
               | THREE.Mesh[]
               | undefined;
 
             if (hitVolumes && hitVolumes.length > 0) {
-              const intersects = this.raycaster.intersectObjects(
-                hitVolumes,
-                false
-              );
+              // Throttle info panel raycasting to RAYCAST_INTERVAL_MS
+              const now = performance.now();
+              if (now - this.lastInfoPanelRaycastTime > this.RAYCAST_INTERVAL_MS) {
+                this._tempNdc.set(ndcX, ndcY);
+                this.raycaster.setFromCamera(this._tempNdc, this.camera);
+                this.cachedInfoPanelIntersects = this.raycaster.intersectObjects(
+                  hitVolumes,
+                  false
+                );
+                this.lastInfoPanelRaycastTime = now;
+              }
 
-              if (intersects.length > 0) {
+              // Use cached intersects
+              if (this.cachedInfoPanelIntersects.length > 0) {
                 // Found a part!
-                const hitObject = intersects[0].object;
+                const hitObject = this.cachedInfoPanelIntersects[0].object;
                 const partName = hitObject.userData.limbType;
 
                 if (partName && this.partInfoPanel) {
                   // Convert intersection point to world space for the panel anchor
                   // The intersection point is already in world space
-                  this.partInfoPanel.show(partName, intersects[0].point);
+                  this.partInfoPanel.show(partName, this.cachedInfoPanelIntersects[0].point);
                   anyHandHovering = true; // Keep schematic glow effect too
                 }
               } else {
@@ -1147,10 +1164,8 @@ export class WorkshopController {
             const ndcX = (1 - pinchMidX) * 2 - 1;
             const ndcY = -(pinchMidY * 2 - 1);
 
-            this.raycaster.setFromCamera(
-              new THREE.Vector2(ndcX, ndcY),
-              this.camera
-            );
+            this._tempNdc.set(ndcX, ndcY);
+            this.raycaster.setFromCamera(this._tempNdc, this.camera);
 
             // Performance optimization: Raycast against hit volume only (not full model)
             // This avoids expensive recursive triangle intersection tests on complex GLB
@@ -1288,13 +1303,14 @@ export class WorkshopController {
               const deltaX = handPosition.x - handState.grabStartHandPosition.x;
               const deltaY = handPosition.y - handState.grabStartHandPosition.y;
 
-              // Calculate raw target position based on hand movement
+              // Calculate raw target position based on hand movement (using pre-allocated temp)
               const movementScale = 0.5; // Sensitivity scaling
-              const rawTargetPosition = new THREE.Vector3(
+              this._tempRawTargetPosition.set(
                 handState.grabStartLimbPosition.x + deltaX * movementScale,
                 handState.grabStartLimbPosition.y + deltaY * movementScale,
                 handState.grabStartLimbPosition.z // Keep Z unchanged
               );
+              const rawTargetPosition = this._tempRawTargetPosition;
 
               // Apply One Euro Filter for stable, jitter-free movement
               // The filter adapts: smooth when stationary, responsive when moving
@@ -1411,10 +1427,8 @@ export class WorkshopController {
           // Simple throttle for hover raycast
           const now = performance.now();
           if (now - handState.lastRaycastTime > this.RAYCAST_INTERVAL_MS) {
-            this.raycaster.setFromCamera(
-              new THREE.Vector2(ndcX, ndcY),
-              this.camera
-            );
+            this._tempNdc.set(ndcX, ndcY);
+            this.raycaster.setFromCamera(this._tempNdc, this.camera);
 
             // Performance optimization: Raycast against hit volumes
             const hitVolumes = this.schematic.userData.hitVolumes as
@@ -1482,6 +1496,28 @@ export class WorkshopController {
    * - Exploded: Scale only the individually hovered limb(s)
    */
   private updateHoverState(isHovering: boolean, deltaTime: number): void {
+    // Performance: Early exit if no hover state change and fully settled
+    const hasHoveredLimbs = this.hoveredLimbTypes.size > 0;
+    const isSettled = this.hoverIntensity < 0.001;
+    
+    // Check if all limb intensities are also settled (near zero)
+    let allLimbsSettled = true;
+    if (!hasHoveredLimbs) {
+      for (const intensity of this.limbHoverIntensities.values()) {
+        if (intensity > 0.001) {
+          allLimbsSettled = false;
+          break;
+        }
+      }
+    } else {
+      allLimbsSettled = false;
+    }
+    
+    // Skip update if nothing is hovering and all values are settled
+    if (!isHovering && !hasHoveredLimbs && isSettled && allLimbsSettled) {
+      return;
+    }
+    
     this.isHoveringSchematic = isHovering;
 
     const transitionSpeed = 8; // Higher = faster transition
@@ -1510,9 +1546,9 @@ export class WorkshopController {
     this.hoverIntensity +=
       (targetIntensity - this.hoverIntensity) * transitionSpeed * deltaTime;
 
-    // Define colors for hover effect
-    const BASE_COLOR = new THREE.Color(0x00ff88); // Original Green-cyan
-    const HOVER_COLOR = new THREE.Color(0xffbf00); // Amber
+    // Use pre-allocated colors for hover effect (avoid per-frame allocations)
+    const BASE_COLOR = this._hoverBaseColor;
+    const HOVER_COLOR = this._hoverHighlightColor;
 
     // Apply visual feedback to schematic
     if (this.schematic) {

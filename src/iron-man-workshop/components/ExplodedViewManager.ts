@@ -176,6 +176,9 @@ export class ExplodedViewManager {
   private timeline: gsap.core.Timeline | null = null;
   private levitationTimeline: gsap.core.Timeline | null = null;
 
+  // Performance: Pre-allocated temp objects to avoid per-frame GC pressure in animation callbacks
+  private readonly _tempTangent: THREE.Vector3 = new THREE.Vector3();
+
   // Sound effects
   private sounds: {
     servoWhir: Howl | null;
@@ -433,15 +436,14 @@ export class ExplodedViewManager {
             // Calculate new position along Bezier curve
             this.getBezierPoint(progressObj.t, p0, p1, p2, mesh.position);
 
-            // Calculate tangent for particle emission direction
-            const tangent = new THREE.Vector3();
-            this.getBezierTangent(progressObj.t, p0, p1, p2, tangent);
+            // Calculate tangent for particle emission direction (using pre-allocated temp)
+            this.getBezierTangent(progressObj.t, p0, p1, p2, this._tempTangent);
 
             // Pass tangent as velocity for particle trails
             // Scale it up based on 1-t to simulate speed (highest at start)
-            tangent.multiplyScalar(5 * (1 - progressObj.t));
+            this._tempTangent.multiplyScalar(5 * (1 - progressObj.t));
 
-            this.config.onLimbMoveUpdate?.(limbName, mesh, tangent);
+            this.config.onLimbMoveUpdate?.(limbName, mesh, this._tempTangent);
           },
           onComplete: () => {
             this.config.onLimbMoveEnd?.(limbName, mesh);
@@ -571,11 +573,11 @@ export class ExplodedViewManager {
 
               this.getBezierPoint(t, p0, p1, p2, mesh.position);
 
-              const tangent = new THREE.Vector3();
-              this.getBezierTangent(t, p0, p1, p2, tangent);
-              tangent.negate().multiplyScalar(5 * progressObj.p);
+              // Use pre-allocated temp tangent for particle emission
+              this.getBezierTangent(t, p0, p1, p2, this._tempTangent);
+              this._tempTangent.negate().multiplyScalar(5 * progressObj.p);
 
-              this.config.onLimbMoveUpdate?.(limbName, mesh, tangent);
+              this.config.onLimbMoveUpdate?.(limbName, mesh, this._tempTangent);
             },
             onComplete: () => {
               this.config.onLimbMoveEnd?.(limbName, mesh);

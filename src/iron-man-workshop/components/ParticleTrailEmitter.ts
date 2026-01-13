@@ -65,6 +65,9 @@ export class ParticleTrailEmitter {
   private emitPosition: THREE.Vector3 = new THREE.Vector3();
   private emitDirection: THREE.Vector3 = new THREE.Vector3(0, -1, 0);
 
+  // Performance: Pre-allocated temp objects to avoid per-frame GC pressure
+  private readonly _tempColor: THREE.Color = new THREE.Color();
+
   constructor(config: Partial<ParticleTrailConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
 
@@ -248,15 +251,15 @@ export class ParticleTrailEmitter {
       positions[i * 3 + 1] = particle.position.y;
       positions[i * 3 + 2] = particle.position.z;
 
-      // Fade color from core to fade color
-      const color = new THREE.Color().lerpColors(
+      // Fade color from core to fade color (using pre-allocated temp to avoid GC)
+      this._tempColor.lerpColors(
         this.config.coreColor,
         this.config.fadeColor,
         lifeRatio
       );
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
+      colors[i * 3] = this._tempColor.r;
+      colors[i * 3 + 1] = this._tempColor.g;
+      colors[i * 3 + 2] = this._tempColor.b;
 
       // Shrink size over lifetime
       sizes[i] = this.config.particleSize * (1 - lifeRatio * 0.7);

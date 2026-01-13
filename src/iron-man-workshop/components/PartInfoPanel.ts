@@ -19,6 +19,9 @@ export class PartInfoPanel {
   private currentTarget: string | null = null;
   private isVisible: boolean = false;
 
+  // GSAP timeline for animation cleanup
+  private animationTimeline: gsap.core.Timeline | null = null;
+
   // Stability - Smoothing for anchor point
   private targetAnchor: THREE.Vector3 = new THREE.Vector3();
   private smoothedAnchor: THREE.Vector3 = new THREE.Vector3();
@@ -123,14 +126,17 @@ export class PartInfoPanel {
       (this.panelMesh.material as THREE.MeshBasicMaterial).opacity = 0;
       (this.connectorLine.material as THREE.LineBasicMaterial).opacity = 0;
 
+      // Kill any existing animation to prevent stacking
+      this.animationTimeline?.kill();
+
       // Animate In with GSAP
-      const tl = gsap.timeline();
+      this.animationTimeline = gsap.timeline();
 
       // 1. Line draws out
-      tl.to(this.connectorLine.material, { opacity: 0.8, duration: 0.2 });
+      this.animationTimeline.to(this.connectorLine.material, { opacity: 0.8, duration: 0.2 });
 
       // 2. Panel expands and fades in
-      tl.to(
+      this.animationTimeline.to(
         [this.panelMesh.scale, this.panelMesh.material],
         {
           x: 1,
@@ -218,10 +224,14 @@ export class PartInfoPanel {
     this.isVisible = false;
     this.currentTarget = null;
 
+    // Kill any existing animation to prevent conflicts
+    this.animationTimeline?.kill();
+
     // Animate Out
     gsap.to([this.panelMesh.material, this.connectorLine.material], {
       opacity: 0,
       duration: 0.3,
+      overwrite: true,
       onComplete: () => {
         this.container.visible = false;
       },
