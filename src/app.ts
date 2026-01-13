@@ -910,7 +910,7 @@ export class App {
     this.statusIndicator?.show();
     this.footer?.show();
     this.hintComponent?.update('iron-man-workshop');
-    this.hintComponent?.show();
+    this.hintComponent?.hide();
     this.modeIndicator?.update('iron-man-workshop');
 
     // Start loop

@@ -58,12 +58,30 @@ export class HintComponent {
     } else if (mode === 'iron-man-workshop') {
       content.innerHTML = `
         <div class="hint-header">
-          <span class="hint-title">Guide</span>
+          <span class="hint-title">INTERFACE CONTROLS</span>
+          <div class="hint-subtitle">GESTURE OVERRIDES ACTIVE</div>
         </div>
-        <div class="hint-list">
-          <div class="hint-item">Grab body to rotate</div>
-          <div class="hint-item">Grab arms/legs to pose</div>
-          <div class="hint-item">Press <kbd>R</kbd> to reset</div>
+        <div class="hint-grid">
+          <div class="hint-row">
+            <div class="hint-label">EXPLODED VIEW</div>
+            <div class="hint-value">Left Hand Open / Close</div>
+          </div>
+          <div class="hint-row">
+            <div class="hint-label">ROTATION</div>
+            <div class="hint-value">Right Hand Pinch & Drag</div>
+          </div>
+          <div class="hint-row">
+            <div class="hint-label">ANALYSIS</div>
+            <div class="hint-value">Right Index Hover</div>
+          </div>
+          <div class="hint-row">
+            <div class="hint-label">COMPONENT SPIN</div>
+            <div class="hint-value">Twist Left Wrist (Exploded)</div>
+          </div>
+          <div class="hint-row">
+            <div class="hint-label">RESET</div>
+            <div class="hint-value">Press <kbd>R</kbd></div>
+          </div>
         </div>
       `;
     } else {
@@ -153,41 +171,66 @@ export class HintComponent {
     style.textContent = `
       .hint-component {
         position: absolute;
-        bottom: 30px; /* Aligned with footer on desktop */
+        bottom: 30px;
         right: 20px;
-        padding: 16px 12px;
-        background: rgba(20, 20, 25, 0.6);
+        padding: 24px;
+        background: rgba(10, 15, 20, 0.75);
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
         color: #fff;
         font-family: 'Nunito', sans-serif;
-        border-radius: 16px;
+        border-radius: 4px; /* Sharper corners for tech look */
         z-index: 100;
-        width: 240px; /* Fixed width for smoother transition */
-        max-height: 400px; /* Arbitrary large height */
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        transition: all 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); /* Slower, smoother bezier */
+        width: 380px; /* Wider for grid */
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 255, 255, 0.15); /* Cyan border glow */
+        transition: all 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
         overflow: hidden;
         display: flex;
         flex-direction: column;
       }
 
+      /* Corner brackets using pseudo-elements */
+      .hint-component::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 20px;
+        height: 20px;
+        border-top: 2px solid rgba(0, 255, 255, 0.6);
+        border-left: 2px solid rgba(0, 255, 255, 0.6);
+        pointer-events: none;
+      }
+
+      .hint-component::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 20px;
+        height: 20px;
+        border-bottom: 2px solid rgba(0, 255, 255, 0.6);
+        border-right: 2px solid rgba(0, 255, 255, 0.6);
+        pointer-events: none;
+      }
+
       .hint-component.minimized {
-        width: 40px;
-        height: 40px; /* Explicit height */
-        max-height: 40px;
+        width: 48px;
+        height: 48px;
+        max-height: 48px;
         padding: 0;
         border-radius: 50%;
         cursor: pointer;
-        background: rgba(20, 20, 25, 0.8);
+        background: rgba(10, 15, 20, 0.9);
+        border: 1px solid rgba(0, 255, 255, 0.3);
         align-items: center;
         justify-content: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
       }
 
       .hint-content, .hint-footer {
         opacity: 1;
-        transition: opacity 0.4s ease 0.2s; /* Slower fade in with longer delay */
+        transition: opacity 0.4s ease 0.2s;
         width: 100%;
       }
 
@@ -195,8 +238,8 @@ export class HintComponent {
       .hint-component.minimized .hint-footer {
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0.2s ease; /* Faster fade out */
-        position: absolute; /* Take out of flow to prevent layout issues */
+        transition: opacity 0.2s ease;
+        position: absolute;
       }
 
       .hint-minimized-icon {
@@ -207,7 +250,7 @@ export class HintComponent {
         font-family: 'Playfair Display', serif;
         font-size: 1.2rem;
         font-weight: 700;
-        color: #fff;
+        color: rgba(0, 255, 255, 0.9);
         opacity: 0;
         transition: all 0.3s ease;
         pointer-events: none;
@@ -216,105 +259,85 @@ export class HintComponent {
       .hint-component.minimized .hint-minimized-icon {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1);
-        transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s; /* Pop in with delay */
-      }
-
-      .hint-footer {
-        margin-top: auto; /* Push to bottom */
-        padding-top: 12px;
-        border-top: 1px solid rgba(255, 255, 255, 0.1);
-        font-size: 0.75rem;
-        color: rgba(255, 255, 255, 0.5);
-        text-align: center;
-        cursor: pointer;
-      }
-      
-      .hint-footer:hover {
-        color: rgba(255, 255, 255, 0.8);
-      }
-
-      .clickable-hint {
-        cursor: pointer;
-        transition: background 0.2s;
-        border-radius: 4px;
-        padding: 2px 4px;
-        margin: -2px -4px;
-      }
-      
-      .clickable-hint:hover {
-        background: rgba(255, 255, 255, 0.1);
-      }
-      
-      .clickable-hint:active {
-        background: rgba(255, 255, 255, 0.2);
-      }
-
-      .mobile-text { display: none; }
-
-      @media (max-width: 768px) {
-        .hint-component {
-          bottom: 50px; /* Higher than footer on mobile */
-          right: 10px;
-          left: auto; /* Don't force left: 10px, let width handle it */
-          width: 200px; /* Slightly smaller on mobile */
-        }
-        
-        .hint-component.minimized {
-          width: 40px;
-          left: auto;
-        }
-        
-        .desktop-text { display: none !important; }
-        .mobile-text { display: inline !important; }
-      }
-        max-width: 260px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-      }
-
-      @media (max-width: 768px) {
-        .hint-component {
-          bottom: 60px; /* Above footer/status */
-          right: 10px;
-          left: 10px;
-          width: auto;
-          max-width: none;
-          min-width: 0;
-          padding: 12px;
-        }
-        .hint-title { font-size: 0.9rem; }
-        .hint-item { font-size: 0.8rem; }
+        transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s;
       }
 
       .hint-header {
-        margin-bottom: 10px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
       }
 
       .hint-title {
-        font-family: 'Playfair Display', serif;
-        font-size: 1rem;
+        font-family: 'Playfair Display', serif; /* Keep brand font */
+        font-size: 0.9rem;
         font-weight: 700;
         color: #fff;
-        letter-spacing: 0.02em;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
       }
 
+      .hint-subtitle {
+        font-size: 0.7rem;
+        color: rgba(0, 255, 255, 0.7);
+        letter-spacing: 0.05em;
+        font-weight: 600;
+      }
+
+      /* Grid Layout for Hints */
+      .hint-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .hint-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .hint-row:last-child {
+        border-bottom: none;
+      }
+
+      .hint-label {
+        font-size: 0.7rem;
+        color: rgba(0, 255, 255, 0.8);
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        flex: 0 0 110px; /* Fixed width for labels */
+      }
+
+      .hint-value {
+        font-size: 0.85rem;
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 400;
+        text-align: right;
+        flex: 1;
+      }
+
+      /* Legacy List Support (for other modes) */
       .hint-list {
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 8px;
       }
 
       .hint-item {
         font-size: 0.85rem;
-        color: rgba(255, 255, 255, 0.7);
+        color: rgba(255, 255, 255, 0.8);
         font-weight: 400;
         line-height: 1.4;
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
       }
 
       .hint-item::before {
@@ -322,35 +345,26 @@ export class HintComponent {
         display: block;
         width: 4px;
         height: 4px;
-        background: rgba(255, 255, 255, 0.3);
+        background: rgba(0, 255, 255, 0.5); /* Cyan dots */
         border-radius: 50%;
       }
 
-      .hint-item.highlight {
-        color: #fff;
-        margin-top: 4px;
-      }
-
-      .hint-item.highlight::before {
-        background: #fff;
-      }
-
       .hint-footer {
-        margin-top: 20px;
-        padding-top: 12px;
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
-        font-size: 0.75rem;
+        margin-top: 24px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        font-size: 0.7rem;
         color: rgba(255, 255, 255, 0.4);
         text-align: center;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.1em;
       }
 
       kbd {
         display: inline-block;
         padding: 2px 6px;
         background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.2);
         border-radius: 4px;
         font-family: 'Nunito', sans-serif;
         font-weight: 700;
@@ -359,6 +373,36 @@ export class HintComponent {
         min-width: 18px;
         text-align: center;
         margin: 0 2px;
+        box-shadow: 0 2px 0 rgba(0,0,0,0.2);
+      }
+
+      @media (max-width: 768px) {
+        .hint-component {
+          bottom: 60px;
+          right: 10px;
+          left: 10px;
+          width: auto;
+          max-width: none;
+          min-width: 0;
+          padding: 16px;
+        }
+
+        .hint-label {
+          flex: 0 0 90px;
+          font-size: 0.65rem;
+        }
+
+        .hint-value {
+          font-size: 0.8rem;
+        }
+
+        .hint-component.minimized {
+          width: 48px;
+          left: auto; /* Reset left */
+        }
+        
+        .desktop-text { display: none !important; }
+        .mobile-text { display: inline !important; }
       }
     `;
     this.element.appendChild(style);
