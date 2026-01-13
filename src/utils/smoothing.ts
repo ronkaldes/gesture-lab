@@ -351,3 +351,118 @@ class LowPassFilter {
     this.initialized = false;
   }
 }
+
+/**
+ * One Euro Filter for THREE.Vector3
+ * Applies independent One Euro Filters to each axis for smooth 3D tracking.
+ * Ideal for hand tracking where micro-tremors cause jitter but fast movements
+ * should have minimal lag.
+ *
+ * @see https://cristal.univ-lille.fr/~casiez/1euro/
+ */
+export class Vector3OneEuroFilter {
+  private xFilter: OneEuroFilter;
+  private yFilter: OneEuroFilter;
+  private zFilter: OneEuroFilter;
+  private result: THREE.Vector3;
+
+  /**
+   * @param minCutoff - Minimum cutoff frequency (Hz). Lower = more smoothing at rest.
+   *                    Typical values: 0.5-2.0 for hand tracking.
+   * @param beta - Speed coefficient. Higher = less lag when moving fast.
+   *               Typical values: 0.5-1.5 for responsive feel.
+   * @param dCutoff - Derivative cutoff frequency (Hz). Usually left at default.
+   */
+  constructor(
+    minCutoff: number = 1.0,
+    beta: number = 0.5,
+    dCutoff: number = 1.0
+  ) {
+    this.xFilter = new OneEuroFilter(minCutoff, beta, dCutoff);
+    this.yFilter = new OneEuroFilter(minCutoff, beta, dCutoff);
+    this.zFilter = new OneEuroFilter(minCutoff, beta, dCutoff);
+    this.result = new THREE.Vector3();
+  }
+
+  /**
+   * Filter a 3D vector value
+   * @param value - Raw input vector
+   * @param timestamp - Current timestamp in seconds
+   * @returns Smoothed vector (reused instance - clone if storing)
+   */
+  filter(value: THREE.Vector3, timestamp: number): THREE.Vector3 {
+    this.result.set(
+      this.xFilter.filter(value.x, timestamp),
+      this.yFilter.filter(value.y, timestamp),
+      this.zFilter.filter(value.z, timestamp)
+    );
+    return this.result;
+  }
+
+  /**
+   * Reset all filters
+   */
+  reset(): void {
+    this.xFilter.reset();
+    this.yFilter.reset();
+    this.zFilter.reset();
+  }
+}
+
+/**
+ * One Euro Filter for scalar roll/rotation values
+ * Handles angle wrap-around properly for smooth rotation tracking.
+ */
+export class RotationOneEuroFilter {
+  private euroFilter: OneEuroFilter;
+  private lastValue: number = 0;
+  private initialized: boolean = false;
+
+  /**
+   * @param minCutoff - Minimum cutoff frequency (Hz). Lower = more smoothing.
+   * @param beta - Speed coefficient. Higher = less lag during fast rotation.
+   * @param dCutoff - Derivative cutoff frequency (Hz).
+   */
+  constructor(
+    minCutoff: number = 1.5,
+    beta: number = 0.8,
+    dCutoff: number = 1.0
+  ) {
+    this.euroFilter = new OneEuroFilter(minCutoff, beta, dCutoff);
+  }
+
+  /**
+   * Filter a rotation value, handling angle wrap-around
+   * @param value - Raw rotation in radians
+   * @param timestamp - Current timestamp in seconds
+   * @returns Smoothed rotation
+   */
+  filter(value: number, timestamp: number): number {
+    if (!this.initialized) {
+      this.lastValue = value;
+      this.initialized = true;
+      return this.euroFilter.filter(value, timestamp);
+    }
+
+    // Handle wrap-around: find the shortest path
+    let delta = value - this.lastValue;
+    if (delta > Math.PI) delta -= 2 * Math.PI;
+    if (delta < -Math.PI) delta += 2 * Math.PI;
+
+    // Unwrap the value for consistent filtering
+    const unwrapped = this.lastValue + delta;
+    const filtered = this.euroFilter.filter(unwrapped, timestamp);
+
+    this.lastValue = value;
+    return filtered;
+  }
+
+  /**
+   * Reset the filter
+   */
+  reset(): void {
+    this.euroFilter.reset();
+    this.lastValue = 0;
+    this.initialized = false;
+  }
+}

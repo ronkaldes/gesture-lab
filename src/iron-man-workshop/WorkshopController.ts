@@ -46,6 +46,10 @@ import {
 import { ParticleTrailSystem } from './components/ParticleTrailEmitter';
 import { PartInfoPanel } from './components/PartInfoPanel';
 import { calculateHandRoll } from '../utils/math';
+import {
+  Vector3OneEuroFilter,
+  RotationOneEuroFilter,
+} from '../utils/smoothing';
 import gsap from 'gsap';
 
 /**
@@ -102,6 +106,9 @@ export class WorkshopController {
       // Per-hand raycast throttling state
       lastRaycastTime: number;
       cachedIntersects: THREE.Intersection[];
+      // One Euro Filters for stabilizing limb grab (reduce hand tremor jitter)
+      limbPositionFilter: Vector3OneEuroFilter | null;
+      limbRotationFilter: RotationOneEuroFilter | null;
     }
   > = new Map();
   private schematicTargetRotation: THREE.Euler = new THREE.Euler(
@@ -1061,6 +1068,9 @@ export class WorkshopController {
           lastHandPosition: null, // For incremental delta
           lastRaycastTime: 0,
           cachedIntersects: [],
+          // Filters created on grab start, reset on release
+          limbPositionFilter: null,
+          limbRotationFilter: null,
         };
         this.handStates.set(handIndex, handState);
       }
@@ -1209,6 +1219,21 @@ export class WorkshopController {
                     // Pause levitation animation to prevent conflicts
                     this.explodedViewManager?.pauseLevitationForLimb(limbType);
 
+                    // Initialize One Euro Filters for stable limb manipulation
+                    // minCutoff=1.0: moderate smoothing at rest
+                    // beta=0.5: responsive to fast movements
+                    handState.limbPositionFilter = new Vector3OneEuroFilter(
+                      1.0,
+                      0.5,
+                      1.0
+                    );
+                    // Slightly more aggressive smoothing for rotation
+                    handState.limbRotationFilter = new RotationOneEuroFilter(
+                      1.2,
+                      0.6,
+                      1.0
+                    );
+
                     console.log(
                       `[WorkshopController] Hand ${handIndex} grabbed limb: ${limbType}`
                     );
@@ -1263,13 +1288,29 @@ export class WorkshopController {
               const deltaX = handPosition.x - handState.grabStartHandPosition.x;
               const deltaY = handPosition.y - handState.grabStartHandPosition.y;
 
-              // Move the limb based on hand movement
-              // Scale the movement to feel natural (hand movement maps to limb movement)
-              const movementScale = 0.5; // Adjust for sensitivity
-              handState.grabbedLimbMesh.position.x =
-                handState.grabStartLimbPosition.x + deltaX * movementScale;
-              handState.grabbedLimbMesh.position.y =
-                handState.grabStartLimbPosition.y + deltaY * movementScale;
+              // Calculate raw target position based on hand movement
+              const movementScale = 0.5; // Sensitivity scaling
+              const rawTargetPosition = new THREE.Vector3(
+                handState.grabStartLimbPosition.x + deltaX * movementScale,
+                handState.grabStartLimbPosition.y + deltaY * movementScale,
+                handState.grabStartLimbPosition.z // Keep Z unchanged
+              );
+
+              // Apply One Euro Filter for stable, jitter-free movement
+              // The filter adapts: smooth when stationary, responsive when moving
+              const timestamp = performance.now() / 1000; // Convert to seconds
+              if (handState.limbPositionFilter) {
+                const smoothedPosition = handState.limbPositionFilter.filter(
+                  rawTargetPosition,
+                  timestamp
+                );
+                handState.grabbedLimbMesh.position.x = smoothedPosition.x;
+                handState.grabbedLimbMesh.position.y = smoothedPosition.y;
+              } else {
+                // Fallback if filter not initialized
+                handState.grabbedLimbMesh.position.x = rawTargetPosition.x;
+                handState.grabbedLimbMesh.position.y = rawTargetPosition.y;
+              }
 
               // === WRIST TWIST ROTATION ===
               // Calculate current wrist roll and apply to limb rotation
@@ -1277,29 +1318,30 @@ export class WorkshopController {
               const pinkyMCP = landmarks[17];
               const currentRoll = calculateHandRoll(indexMCP, pinkyMCP);
 
-              // Smooth the roll value to reduce jitter
-              const ROLL_SMOOTHING = 0.25;
-              handState.smoothedWristRoll =
-                handState.smoothedWristRoll * (1 - ROLL_SMOOTHING) +
-                currentRoll * ROLL_SMOOTHING;
-
               // Calculate roll delta from initial grab position
-              let rollDelta =
-                handState.smoothedWristRoll - handState.grabStartWristRoll;
+              let rollDelta = currentRoll - handState.grabStartWristRoll;
 
               // Handle wrap-around at ±π boundary
               if (rollDelta > Math.PI) rollDelta -= 2 * Math.PI;
               if (rollDelta < -Math.PI) rollDelta += 2 * Math.PI;
 
-              // Apply roll to limb Y-axis rotation (twist around vertical axis)
-              // Sensitivity: how much wrist twist translates to limb rotation
+              // Calculate raw target rotation
               const ROTATION_SENSITIVITY = 2.5;
-              handState.grabbedLimbMesh.rotation.y =
+              const rawTargetRotation =
                 handState.grabStartLimbRotation.y +
                 rollDelta * ROTATION_SENSITIVITY;
 
-              // Update last roll for next frame
-              handState.lastWristRoll = handState.smoothedWristRoll;
+              // Apply One Euro Filter for smooth rotation
+              if (handState.limbRotationFilter) {
+                const smoothedRotation = handState.limbRotationFilter.filter(
+                  rawTargetRotation,
+                  timestamp
+                );
+                handState.grabbedLimbMesh.rotation.y = smoothedRotation;
+              } else {
+                // Fallback if filter not initialized
+                handState.grabbedLimbMesh.rotation.y = rawTargetRotation;
+              }
             }
           } else if (
             handState.grabTarget === 'body' &&
@@ -1356,6 +1398,10 @@ export class WorkshopController {
         handState.grabStartLimbRotation = null;
         handState.grabStartWristRoll = null;
         handState.lastWristRoll = null;
+
+        // Reset One Euro Filters for next grab
+        handState.limbPositionFilter = null;
+        handState.limbRotationFilter = null;
 
         // Check for hover
         if (this.schematic) {

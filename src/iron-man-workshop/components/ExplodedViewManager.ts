@@ -316,11 +316,19 @@ export class ExplodedViewManager {
 
   /**
    * Resume levitation after limb is released
+   * Restarts the levitation animation from current positions to prevent snap-back
    */
   resumeLevitation(): void {
-    if (this.levitationTimeline && this.levitationTimeline.paused()) {
-      this.levitationTimeline.resume();
-      console.log('[ExplodedViewManager] Resumed levitation after limb release');
+    // Instead of resuming (which would animate back to old positions),
+    // restart the levitation from wherever the limbs currently are.
+    // This allows user-moved parts to stay in their new positions.
+    if (this.state === 'exploded') {
+      console.log(
+        '[ExplodedViewManager] Restarting levitation from current positions'
+      );
+      // startLevitation will kill the old timeline and create a new one
+      // based on current mesh.position values
+      this.startLevitation();
     }
   }
 
