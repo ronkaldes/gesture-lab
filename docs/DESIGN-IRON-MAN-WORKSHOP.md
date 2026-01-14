@@ -152,3 +152,42 @@ _Note: Turntable rotation maps X/Y hand translation to Y/X world rotation for a 
 - **Raycasting**: Throttled to every nth frame or based on distance delta to save CPU cycles during hover detection.
 - **Geometry**: High-poly armor parts used only for the main suit; lower LODs used if available (though current target is high-end desktop web).
 - **Particles**: GPU-instanced particles for the startup sparks and ambient dust to maintain 60FPS.
+
+---
+
+## 6. Audio Design
+
+### 6.1 Philosophy
+
+The audio experience is designed to be **tactile, spatial, and cinematic**. It's not just about playing sounds; it's about grounding the holographic interface in reality. Every interaction—from a subtle hover to a major assembly—should have a distinct sonic signature that reinforces the "Stark Tech" aesthetic.
+
+### 6.2 Technology
+
+- **Positional Audio**: Utilizes Three.js `PositionalAudio` to attach sounds to specific 3D objects (e.g., the schematic, specific limbs). This ensures that as the user rotates or moves around the model, the sound originates from the correct location.
+- **Global Audio**: Ambient hums and UI blips are handled globally to provide a consistent backdrop.
+
+### 6.3 Soundscape Breakdown
+
+#### Ambience
+
+- **Workshop Hum**: A deep, steady, low-frequency drone that runs continuously. It provides the "room tone" of a high-tech lab.
+
+#### User Interface (UI)
+
+- **Hover Details**: A subtle, high-pitch digital "blip" when hovering over parts. It signals that information is available without being intrusive.
+- **Loading Loop**: A rhythmic computing/typing sound during the initial F.R.I.D.A.Y. system initialization.
+
+#### Mechanics & Interaction
+
+- **Assembly/Disassembly**:
+  - **Fly-by**: Sharp "whooshes" as parts fly in from off-screen.
+  - **Part Lock**: A tight, percussive dampening impact (0.3s) when a part physically connects to the main body.
+  - **Servo Whir**: Mechanical motor sounds during the exploded view transition.
+- **Rotation**:
+  - **Schematic**: A heavy, geared mechanical sound that plays while rotating the entire suit.
+  - **Part Manipulation**: A lighter, servo-based sound when rotating individual components in hand.
+
+#### Feedback
+
+- **Scan Beam**: A rising, high-energy sweep that syncs with the visual laser scan.
+- **Energy Surge**: A powerful discharge sound accompanying the final system activation and holographic flash.
