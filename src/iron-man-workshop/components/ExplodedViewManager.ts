@@ -58,6 +58,8 @@ export interface ExplodedViewConfig {
     mesh: THREE.Object3D,
     velocity: THREE.Vector3
   ) => void;
+  /** Callback when an individual limb completes assembly */
+  onLimbAssemblyComplete?: (limbName: LimbType) => void;
   /** Callback for animation state changes */
   onStateChange?: (newState: ExplodedViewState) => void;
   /** Callback for anticipation "charge" phase */
@@ -590,8 +592,8 @@ export class ExplodedViewManager {
     // Delays relative to timeline start
     const sequenceDelays: { [key: string]: number } = {
       torso: 0.0,
-      limbs: 0.25, // Limbs start much sooner (was 0.5)
-      head: 0.8, // Head follows quicker (was 1.2)
+      limbs: 0.25,
+      head: 0.8,
     };
 
     for (const [groupName, limbs] of Object.entries(sequenceGroups)) {
@@ -658,6 +660,8 @@ export class ExplodedViewManager {
               this.config.onLimbMoveEnd?.(limbName, mesh);
               mesh.position.copy(originalState.position);
               mesh.rotation.copy(originalState.rotation);
+              // Trigger per-limb assembly completion sound
+              this.config.onLimbAssemblyComplete?.(limbName);
             },
           },
           totalStartTime

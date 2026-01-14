@@ -52,7 +52,8 @@ export class LoadingOverlay {
           background: rgba(0, 0, 0, 0.2); /* Very subtle tint */
           display: flex;
           flex-direction: column;
-          justify-content: center;
+          justify-content: flex-start; /* Move from center to top */
+          padding-top: 20%; /* Custom offset from top */
           align-items: center;
           z-index: 1000;
           font-family: 'Segoe UI', 'Roboto', sans-serif;

@@ -54,6 +54,7 @@ import {
   RotationOneEuroFilter,
 } from '../utils/smoothing';
 import gsap from 'gsap';
+import { WorkshopAudioManager } from './audio/WorkshopAudioManager';
 
 /**
  * Main controller for the Iron Man holographic workshop interface.
@@ -162,6 +163,7 @@ export class WorkshopController {
   // Performance optimization: Info panel raycast throttling
   private lastInfoPanelRaycastTime: number = 0;
   private cachedInfoPanelIntersects: THREE.Intersection[] = [];
+  private lastHoveredPart: string | null = null;
 
   // Performance optimization: Cached schematic shader meshes
   private schematicShaderMeshes: THREE.Mesh<
@@ -172,6 +174,9 @@ export class WorkshopController {
   // Exploded View Feature
   private explodedViewManager: ExplodedViewManager | null = null;
   private particleTrailSystem: ParticleTrailSystem | null = null;
+
+  // Audio system
+  private audioManager: WorkshopAudioManager;
 
   // Left-hand gesture detection for exploded view
   // Open palm = explode, Closed fist = assemble
@@ -193,11 +198,17 @@ export class WorkshopController {
   private leftHandRollSmoothed: number = 0;
   private leftHandLastPalmY: number | null = null;
   private leftHandPalmYSmoothed: number = 0;
+  private leftHandRotateAudioPlaying: boolean = false;
 
   // Camera animation state
   // Camera animation state
   private baseCameraZ: number = 5;
   private targetCameraZ: number = 10; // Start zoomed out
+  private isStartupSequence: boolean = false;
+
+  // Rotation audio state
+  private lastRotationSoundTime: number = 0;
+  private previousSchematicRotationY: number = -Math.PI / 2;
 
   constructor(
     handTracker: HandTracker,
@@ -236,6 +247,9 @@ export class WorkshopController {
     // Post-processing with bloom
     this.composer = new EffectComposer(this.renderer);
     this.setupPostProcessing();
+
+    // Initialize audio system
+    this.audioManager = new WorkshopAudioManager(this.camera);
 
     // Bind resize handler
     this.handleResize = this.handleResize.bind(this);
@@ -413,17 +427,29 @@ export class WorkshopController {
     this.schematic.visible = true;
 
     console.log('[WorkshopController] Starting cinematic sequence...');
+    this.isStartupSequence = true;
 
     // Step 1: Loading Sequence (0.5 - 1s) - AWAIT this before starting timeline
+    // Play boot sequence sound
+    this.audioManager.play('bootSequence');
+
+    // Start loading sound loop
+    this.audioManager.play('loadingLoop');
+
     if (this.loadingOverlay) {
-      await this.loadingOverlay.startLoading(1000); // 1 second load
+      await this.loadingOverlay.startLoading(1500); // 1.5 second load
     }
+
+    // Stop loading sound loop
+    this.audioManager.stop('loadingLoop');
 
     // Step 2: Begin Cinematic Timeline (Assembly -> Scan -> Reveal)
     const timeline = gsap.timeline();
 
     timeline.call(() => {
       console.log('[WorkshopController] Triggering assembly...');
+      // Play servo sound during assembly
+      this.audioManager.play('flybyIn');
       // Zoom back in to normal distance during assembly
       this.targetCameraZ = this.baseCameraZ;
       this.explodedViewManager?.assemble();
@@ -436,6 +462,9 @@ export class WorkshopController {
     // Step 3: Vertical Scan Trigger
     timeline.call(() => {
       console.log('[WorkshopController] Triggering scan...');
+      // Stop servo sound, play metal click for assembly complete
+      // Play scan beam sound
+      this.audioManager.play('scanBeam', this.schematic!);
       this.triggerScanEffect();
     });
 
@@ -445,6 +474,7 @@ export class WorkshopController {
     // Step 4: Reveal Environment
     timeline.call(() => {
       console.log('[WorkshopController] Revealing environment...');
+      this.isStartupSequence = false;
 
       const animateFadeIn = (group: THREE.Group) => {
         group.visible = true;
@@ -486,6 +516,9 @@ export class WorkshopController {
 
       if (this.rings) animateFadeIn(this.rings);
       if (this.panels) animateFadeIn(this.panels);
+
+      // Start ambient background hum
+      this.audioManager.startAmbient();
     });
   }
 
@@ -554,6 +587,9 @@ export class WorkshopController {
     const surgeDecay = 0.8;
 
     console.log('[WorkshopController] Triggering energy surge...');
+
+    // Play energy surge sound
+    this.audioManager.play('energySurge', this.schematic!);
 
     for (const mesh of this.schematicShaderMeshes) {
       // Get base values (or default)
@@ -631,9 +667,10 @@ export class WorkshopController {
     });
 
     // Create ExplodedViewManager with cinematic callbacks
+    // Note: enableSound is false - audio is handled centrally by WorkshopAudioManager
     this.explodedViewManager = new ExplodedViewManager({
       animationDuration: 1.0,
-      enableSound: true,
+      enableSound: false, // Handled by WorkshopAudioManager
       enableParticles: true,
 
       // Called when limb starts moving
@@ -682,6 +719,7 @@ export class WorkshopController {
           mesh instanceof THREE.Mesh &&
           mesh.material instanceof THREE.ShaderMaterial
         ) {
+          // Reset glow
           const baseOpacity = mesh.userData.baseOpacity ?? 0.4;
           gsap.to(mesh.material.uniforms.uOpacity, {
             value: baseOpacity,
@@ -691,9 +729,19 @@ export class WorkshopController {
         }
       },
 
+      // Called when an individual limb snaps into place during assembly
+      onLimbAssemblyComplete: (_limbName) => {
+        if (!this.isStartupSequence) {
+          // Play impact sound for each limb arrival
+          this.audioManager.play('plasmaShot', this.schematic!);
+        }
+      },
+
       // Called during anticipation phase - boost hologram intensity
       onAnticipation: () => {
         console.log('[WorkshopController] Anticipation phase - charging');
+        // Play power up sound for anticipation
+        this.audioManager.play('energySurge', this.schematic!);
         // Brief intense glow during anticipation
         for (const mesh of this.schematicShaderMeshes) {
           gsap.to(mesh.material.uniforms.uOpacity, {
@@ -708,6 +756,21 @@ export class WorkshopController {
 
       // Called on state changes
       onStateChange: (newState) => {
+        // Audio feedback for state changes
+        if (newState === 'exploding') {
+          // Start servo sound for movement
+          this.audioManager.play('disassemble');
+        } else if (newState === 'assembling') {
+          // Start servo sound for movement
+          if (!this.isStartupSequence) {
+            this.audioManager.play('assemble');
+          }
+        } else if (newState === 'exploded') {
+          // Stop servo, play metal click for lock-in
+        } else if (newState === 'assembled') {
+          // Stop servo, play metal click for lock-in
+        }
+
         // Camera zoom on state change
         if (newState === 'exploding') {
           this.targetCameraZ = this.baseCameraZ + 3.8; // Zoom out MORE (was 2.5)
@@ -1132,10 +1195,19 @@ export class WorkshopController {
    * when tracking begins.
    */
   private updateLeftHandWristRotation(): void {
+    // Helper to stop rotation audio if playing
+    const stopRotationAudio = () => {
+      if (this.leftHandRotateAudioPlaying) {
+        this.audioManager.stop('leftHandRotate');
+        this.leftHandRotateAudioPlaying = false;
+      }
+    };
+
     // Only active in exploded state
     if (this.explodedViewManager?.getState() !== 'exploded') {
       this.leftHandLastRoll = null;
       this.leftHandLastPalmY = null;
+      stopRotationAudio();
       return;
     }
 
@@ -1143,6 +1215,7 @@ export class WorkshopController {
     if (this.lastLeftHandPose !== 'open') {
       this.leftHandLastRoll = null;
       this.leftHandLastPalmY = null;
+      stopRotationAudio();
       return;
     }
 
@@ -1150,6 +1223,7 @@ export class WorkshopController {
     if (!result || result.landmarks.length === 0) {
       this.leftHandLastRoll = null;
       this.leftHandLastPalmY = null;
+      stopRotationAudio();
       return;
     }
 
@@ -1167,6 +1241,7 @@ export class WorkshopController {
     if (leftHandIndex === -1) {
       this.leftHandLastRoll = null;
       this.leftHandLastPalmY = null;
+      stopRotationAudio();
       return;
     }
 
@@ -1190,6 +1265,11 @@ export class WorkshopController {
       this.leftHandPalmYSmoothed = currentPalmY;
       this.leftHandLastRoll = currentRoll;
       this.leftHandLastPalmY = currentPalmY;
+      // Start rotation audio loop when rotation becomes active
+      if (!this.leftHandRotateAudioPlaying) {
+        this.audioManager.play('leftHandRotate');
+        this.leftHandRotateAudioPlaying = true;
+      }
       return;
     }
 
@@ -1231,6 +1311,25 @@ export class WorkshopController {
       -Math.PI / 3,
       Math.min(Math.PI / 3, this.schematicTargetRotation.x)
     );
+
+    // === ROTATION SOUND (Left Hand / Exploded Mode) ===
+    // Use same logic as right hand: threshold + cooldown
+    const rotationDelta = Math.abs(
+      this.schematicTargetRotation.y - this.previousSchematicRotationY
+    );
+    const now = performance.now();
+    const ROTATION_SOUND_COOLDOWN_MS = 400;
+    const ROTATION_THRESHOLD = 0.15; // ~8.6 degrees
+
+    // Only play if we have rotated enough AND cooldown has passed
+    if (
+      rotationDelta > ROTATION_THRESHOLD &&
+      now - this.lastRotationSoundTime > ROTATION_SOUND_COOLDOWN_MS
+    ) {
+      this.audioManager.play('rotateSchematic');
+      this.lastRotationSoundTime = now;
+      this.previousSchematicRotationY = this.schematicTargetRotation.y;
+    }
 
     // Update last values for next frame
     this.leftHandLastRoll = this.leftHandRollSmoothed;
@@ -1486,6 +1585,12 @@ export class WorkshopController {
                 const partName = hitObject.userData.limbType;
 
                 if (partName && this.partInfoPanel) {
+                  // Play hover sound if we just entered this part
+                  if (partName !== this.lastHoveredPart) {
+                    this.audioManager.play('hoverDetails');
+                    this.lastHoveredPart = partName;
+                  }
+
                   // Convert intersection point to world space for the panel anchor
                   // The intersection point is already in world space
                   this.partInfoPanel.show(
@@ -1497,6 +1602,7 @@ export class WorkshopController {
               } else {
                 // No hit, hide panel
                 this.partInfoPanel?.hide();
+                this.lastHoveredPart = null;
               }
             }
           }
@@ -1605,6 +1711,9 @@ export class WorkshopController {
                     console.log(
                       `[WorkshopController] Hand ${handIndex} grabbed limb: ${limbType}`
                     );
+
+                    // Play grab sound
+                    this.audioManager.play('pinchRotate');
                   } else {
                     // Fallback to body rotation if limb mesh not found
                     handState.grabTarget = 'body';
@@ -1629,6 +1738,7 @@ export class WorkshopController {
                   console.log(
                     `[WorkshopController] Hand ${handIndex} grabbed body for rotation`
                   );
+                  this.audioManager.play('pinchRotate');
                 }
 
                 foundTarget = true;
@@ -1749,6 +1859,28 @@ export class WorkshopController {
               this.rotationVelocity.y =
                 this.rotationVelocity.y * 0.7 + currentVelY * 0.3;
             }
+
+            // === ROTATION SOUND (Assembled mode only) ===
+            const isAssembled =
+              this.explodedViewManager?.getState() === 'assembled';
+            if (isAssembled) {
+              const rotationDelta = Math.abs(
+                this.schematicTargetRotation.y - this.previousSchematicRotationY
+              );
+              const now = performance.now();
+              const ROTATION_SOUND_COOLDOWN_MS = 400;
+              const ROTATION_THRESHOLD = 0.15; // ~8.6 degrees
+
+              if (
+                rotationDelta > ROTATION_THRESHOLD &&
+                now - this.lastRotationSoundTime > ROTATION_SOUND_COOLDOWN_MS
+              ) {
+                this.audioManager.play('rotateSchematic');
+                this.lastRotationSoundTime = now;
+                this.previousSchematicRotationY =
+                  this.schematicTargetRotation.y;
+              }
+            }
           }
         }
       } else {
@@ -1756,6 +1888,8 @@ export class WorkshopController {
         // Resume levitation if we were grabbing a limb
         if (handState.grabTarget === 'limb' && handState.grabbedLimbType) {
           this.explodedViewManager?.resumeLevitation();
+          // Play release sound
+          // this.audioManager.play('partRelease');
         }
 
         handState.isGrabbing = false;
@@ -1880,6 +2014,15 @@ export class WorkshopController {
     // Skip update if nothing is hovering and all values are settled
     if (!isHovering && !hasHoveredLimbs && isSettled && allLimbsSettled) {
       return;
+    }
+
+    // Play hover audio feedback on state transition
+    if (isHovering !== this.isHoveringSchematic) {
+      if (isHovering) {
+        // this.audioManager.play('hoverEnter');
+      } else {
+        // this.audioManager.play('hoverExit');
+      }
     }
 
     this.isHoveringSchematic = isHovering;
@@ -2192,6 +2335,9 @@ export class WorkshopController {
    * Create a new instance if the workshop needs to be restarted.
    */
   dispose(): void {
+    // Dispose audio system
+    this.audioManager.dispose();
+
     // Dispose exploded view system
     this.explodedViewManager?.dispose();
     this.explodedViewManager = null;
