@@ -29,17 +29,17 @@ export class HintComponent {
     const content = this.element.querySelector('.hint-content');
     if (!content) return;
 
-    if (mode === 'galaxy') {
+    if (mode === 'iron-man-workshop') {
       content.innerHTML = `
         <div class="hint-header">
           <span class="hint-title">Guide</span>
         </div>
         <div class="hint-list">
-          <div class="hint-item">Show both hands to spawn</div>
-          <div class="hint-item">Move apart to grow</div>
-          <div class="hint-item">Move together to shrink</div>
-          <div class="hint-item">Close hands for Big Bang</div>
-          <div class="hint-item">Pinch for Star burst</div>
+          <div class="hint-item">Open left hand to disassemble</div>
+          <div class="hint-item">Close left hand to assemble</div>
+          <div class="hint-item">Pinch right hand to rotate</div>
+          <div class="hint-item">Hover right index for part info</div>
+          <div class="hint-item">Press <kbd>R</kbd> to reset</div>
         </div>
       `;
     } else if (mode === 'cosmic-slash') {
@@ -55,17 +55,17 @@ export class HintComponent {
           <div class="hint-item">Press <kbd>R</kbd> to restart</div>
         </div>
       `;
-    } else if (mode === 'iron-man-workshop') {
+    } else if (mode === 'galaxy') {
       content.innerHTML = `
         <div class="hint-header">
           <span class="hint-title">Guide</span>
         </div>
         <div class="hint-list">
-          <div class="hint-item">Open left hand to disassemble</div>
-          <div class="hint-item">Close left hand to assemble</div>
-          <div class="hint-item">Pinch right hand to rotate</div>
-          <div class="hint-item">Hover right index for part info</div>
-          <div class="hint-item">Press <kbd>R</kbd> to reset</div>
+          <div class="hint-item">Show both hands to spawn</div>
+          <div class="hint-item">Move apart to grow</div>
+          <div class="hint-item">Move together to shrink</div>
+          <div class="hint-item">Close hands for Big Bang</div>
+          <div class="hint-item">Pinch for Star burst</div>
         </div>
       `;
     } else {
@@ -184,14 +184,14 @@ export class HintComponent {
 
       .hint-component-box {
         pointer-events: auto;
-        padding: 24px;
+        padding: 24px 12px;
         background: rgba(10, 15, 20, 0.75);
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
         color: #fff;
         font-family: 'Nunito', sans-serif;
         border-radius: 4px; /* Sharper corners for tech look */
-        width: 250px;
+        width: 270px;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 255, 255, 0.15); /* Cyan border glow */
         transition: all 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
         overflow: hidden;

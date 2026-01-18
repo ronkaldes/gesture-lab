@@ -39,6 +39,28 @@ export class LandingPage {
         </header>
         
         <div class="portals-container">
+          <button class="portal-card workshop-portal" data-mode="iron-man-workshop">
+            <div class="portal-content">
+              <h2 class="portal-title">Iron Man Workshop</h2>
+              <p class="portal-desc">Interactive Mark VI Armor Interface</p>
+            </div>
+            <div class="portal-footer">
+              <span class="key-hint">Press <kbd>I</kbd></span>
+            </div>
+            <div class="portal-bg"></div>
+          </button>
+
+          <button class="portal-card slash-portal" data-mode="cosmic-slash">
+            <div class="portal-content">
+              <h2 class="portal-title">Cosmic Slash</h2>
+              <p class="portal-desc">Slice through cosmic anomalies with your hands</p>
+            </div>
+            <div class="portal-footer">
+              <span class="key-hint">Press <kbd>C</kbd></span>
+            </div>
+            <div class="portal-bg"></div>
+          </button>
+
           <button class="portal-card galaxy-portal" data-mode="galaxy">
             <div class="portal-content">
               <h2 class="portal-title">Interactive Galaxy</h2>
@@ -57,28 +79,6 @@ export class LandingPage {
             </div>
             <div class="portal-footer">
               <span class="key-hint">Press <kbd>F</kbd></span>
-            </div>
-            <div class="portal-bg"></div>
-          </button>
-          
-          <button class="portal-card slash-portal" data-mode="cosmic-slash">
-            <div class="portal-content">
-              <h2 class="portal-title">Cosmic Slash</h2>
-              <p class="portal-desc">Slice through cosmic anomalies with your hands</p>
-            </div>
-            <div class="portal-footer">
-              <span class="key-hint">Press <kbd>C</kbd></span>
-            </div>
-            <div class="portal-bg"></div>
-          </button>
-          
-          <button class="portal-card workshop-portal" data-mode="iron-man-workshop">
-            <div class="portal-content">
-              <h2 class="portal-title">Iron Man Workshop</h2>
-              <p class="portal-desc">Interactive Mark VI Armor Interface</p>
-            </div>
-            <div class="portal-footer">
-              <span class="key-hint">Press <kbd>I</kbd></span>
             </div>
             <div class="portal-bg"></div>
           </button>

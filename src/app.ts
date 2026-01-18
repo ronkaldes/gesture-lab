@@ -165,14 +165,14 @@ export class App {
   private initializeUI(): void {
     // Landing Page
     this.landingPage = new LandingPage(this.container, (mode) => {
-      if (mode === 'galaxy') {
+      if (mode === 'iron-man-workshop') {
+        this.switchToWorkshopMode();
+      } else if (mode === 'cosmic-slash') {
+        this.switchToCosmicSlashMode();
+      } else if (mode === 'galaxy') {
         this.switchToGalaxyMode();
       } else if (mode === 'foggy-mirror') {
         this.switchToFoggyMirrorMode();
-      } else if (mode === 'cosmic-slash') {
-        this.switchToCosmicSlashMode();
-      } else if (mode === 'iron-man-workshop') {
-        this.switchToWorkshopMode();
       }
     });
 
@@ -239,17 +239,17 @@ export class App {
       }
 
       // Mode switching shortcuts
-      if (key === 'g') {
-        this.switchToGalaxyMode();
-        return;
-      } else if (key === 'f') {
-        this.switchToFoggyMirrorMode();
+      if (key === 'i') {
+        this.switchToWorkshopMode();
         return;
       } else if (key === 'c') {
         this.switchToCosmicSlashMode();
         return;
-      } else if (key === 'i') {
-        this.switchToWorkshopMode();
+      } else if (key === 'g') {
+        this.switchToGalaxyMode();
+        return;
+      } else if (key === 'f') {
+        this.switchToFoggyMirrorMode();
         return;
       }
 
