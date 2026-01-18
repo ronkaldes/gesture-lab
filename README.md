@@ -2,6 +2,8 @@
 
 A laboratory for fun experiments with movement tracking and interactive visuals.
 
+Live Demo: https://gesturelab.icu
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
 ![Three.js](https://img.shields.io/badge/Three.js-0.160-purple)
