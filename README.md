@@ -6,7 +6,8 @@ A laboratory for fun experiments with movement tracking and interactive visuals.
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
 ![Three.js](https://img.shields.io/badge/Three.js-0.160-purple)
 
-> **Disclaimer:** This is a vibe-coded project by Sonnet 4.5 and Gemini 3, and may not follow strict best practices. Use at your own discretion.
+> [!NOTE]
+> **Disclaimer:** This is a fully vibe-coded project by Opus 4.5, Sonnet 4.5, and Gemini 3, and may not follow strict best practices. Use at your own discretion.
 
 ## 🛠️ Tech Stack
 
