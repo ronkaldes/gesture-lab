@@ -20,7 +20,7 @@ export class ModeIndicator {
   }
 
   update(
-    mode: 'galaxy' | 'foggy-mirror' | 'cosmic-slash' | 'iron-man-workshop'
+    mode: 'galaxy' | 'foggy-mirror' | 'cosmic-slash' | 'iron-man-workshop',
   ): void {
     if (!this.element) {
       this.createDOM();
@@ -35,10 +35,10 @@ export class ModeIndicator {
       mode === 'galaxy'
         ? 'Interactive Galaxy'
         : mode === 'cosmic-slash'
-        ? 'Cosmic Slash'
-        : mode === 'iron-man-workshop'
-        ? 'Iron Man Workshop'
-        : 'Foggy Mirror';
+          ? 'Cosmic Slash'
+          : mode === 'iron-man-workshop'
+            ? 'Iron Man Workshop'
+            : 'Foggy Mirror';
 
     content.innerHTML = `
       <div class="current-mode">${modeName}</div>
@@ -49,16 +49,24 @@ export class ModeIndicator {
 
   private createDOM(): void {
     this.element = document.createElement('div');
-    this.element.className = 'mode-indicator';
+    this.element.className = 'mode-indicator-layout';
     this.element.innerHTML = `
-      <div class="mode-content"></div>
+      <div class="mode-indicator-inner">
+        <div class="mode-indicator-box">
+          <div class="mode-content"></div>
+        </div>
+      </div>
     `;
 
+    const indicatorBox = this.element.querySelector(
+      '.mode-indicator-box',
+    ) as HTMLElement;
+
     if (this.clickHandler) {
-      this.element.style.cursor = 'pointer';
+      indicatorBox.style.cursor = 'pointer';
     }
 
-    this.element.addEventListener('click', () => {
+    indicatorBox.addEventListener('click', () => {
       if (this.clickHandler) {
         this.clickHandler();
       }
@@ -66,10 +74,26 @@ export class ModeIndicator {
 
     const style = document.createElement('style');
     style.textContent = `
-      .mode-indicator {
+      .mode-indicator-layout {
         position: absolute;
-        top: 20px;
-        left: 20px;
+        top: 0;
+        left: 0;
+        width: 100%;
+        padding-top: 20px;
+        z-index: 100;
+        pointer-events: none;
+      }
+
+      .mode-indicator-inner {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 16px;
+        display: flex;
+        justify-content: flex-start;
+      }
+
+      .mode-indicator-box {
+        pointer-events: auto;
         padding: 10px 12px;
         background: rgba(20, 20, 25, 0.6);
         backdrop-filter: blur(20px);
@@ -77,22 +101,25 @@ export class ModeIndicator {
         color: #fff;
         font-family: 'Nunito', sans-serif;
         border-radius: 16px;
-        z-index: 100;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         border: 1px solid rgba(255, 255, 255, 0.08);
         min-width: 160px;
         transition: transform 0.2s ease, background 0.2s ease;
       }
 
-      .mode-indicator:active {
+      .mode-indicator-box:active {
         transform: scale(0.98);
         background: rgba(30, 30, 35, 0.8);
       }
 
       @media (max-width: 768px) {
-        .mode-indicator {
-          top: 10px;
-          left: 10px;
+        .mode-indicator-layout {
+          padding-top: 10px;
+        }
+        .mode-indicator-inner {
+          padding: 0 10px;
+        }
+        .mode-indicator-box {
           padding: 8px 12px;
           min-width: 0;
         }

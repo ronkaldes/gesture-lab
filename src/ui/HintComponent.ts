@@ -18,7 +18,7 @@ export class HintComponent {
   }
 
   update(
-    mode: 'galaxy' | 'foggy-mirror' | 'cosmic-slash' | 'iron-man-workshop'
+    mode: 'galaxy' | 'foggy-mirror' | 'cosmic-slash' | 'iron-man-workshop',
   ): void {
     if (!this.element) {
       this.createDOM();
@@ -112,27 +112,38 @@ export class HintComponent {
 
   private updateVisibility(): void {
     if (this.element) {
-      if (this.isVisible) {
-        this.element.classList.remove('minimized');
-      } else {
-        this.element.classList.add('minimized');
+      const hintBox = this.element.querySelector('.hint-component-box');
+      if (hintBox) {
+        if (this.isVisible) {
+          hintBox.classList.remove('minimized');
+        } else {
+          hintBox.classList.add('minimized');
+        }
       }
     }
   }
 
   private createDOM(): void {
     this.element = document.createElement('div');
-    this.element.className = 'hint-component';
+    this.element.className = 'hint-component-layout';
     this.element.innerHTML = `
-      <div class="hint-content"></div>
-      <div class="hint-footer">
-        <span class="desktop-text">Press <kbd>H</kbd> to toggle hints</span>
-        <span class="mobile-text">Tap to toggle hints</span>
+      <div class="hint-component-inner">
+        <div class="hint-component-box">
+          <div class="hint-content"></div>
+          <div class="hint-footer">
+            <span class="desktop-text">Press <kbd>H</kbd> to toggle hints</span>
+            <span class="mobile-text">Tap to toggle hints</span>
+          </div>
+          <div class="hint-minimized-icon">H</div>
+        </div>
       </div>
-      <div class="hint-minimized-icon">H</div>
     `;
 
-    this.element.addEventListener('click', (e) => {
+    const hintBox = this.element.querySelector(
+      '.hint-component-box',
+    ) as HTMLElement;
+
+    hintBox.addEventListener('click', (e) => {
       // If minimized, clicking anywhere expands it
       if (!this.isVisible) {
         this.toggle();
@@ -140,7 +151,7 @@ export class HintComponent {
       }
     });
 
-    const footer = this.element.querySelector('.hint-footer');
+    const footer = hintBox.querySelector('.hint-footer');
     if (footer) {
       footer.addEventListener('click', (e) => {
         // If expanded, clicking footer minimizes it
@@ -153,10 +164,26 @@ export class HintComponent {
 
     const style = document.createElement('style');
     style.textContent = `
-      .hint-component {
+      .hint-component-layout {
         position: absolute;
-        bottom: 30px;
-        right: 20px;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        padding-bottom: 30px;
+        z-index: 150;
+        pointer-events: none;
+      }
+
+      .hint-component-inner {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 16px;
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .hint-component-box {
+        pointer-events: auto;
         padding: 24px;
         background: rgba(10, 15, 20, 0.75);
         backdrop-filter: blur(20px);
@@ -164,17 +191,17 @@ export class HintComponent {
         color: #fff;
         font-family: 'Nunito', sans-serif;
         border-radius: 4px; /* Sharper corners for tech look */
-        z-index: 150;
         width: 250px;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 255, 255, 0.15); /* Cyan border glow */
         transition: all 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        position: relative;
       }
 
       /* Corner brackets using pseudo-elements */
-      .hint-component::before {
+      .hint-component-box::before {
         content: '';
         position: absolute;
         top: 0;
@@ -186,7 +213,7 @@ export class HintComponent {
         pointer-events: none;
       }
 
-      .hint-component::after {
+      .hint-component-box::after {
         content: '';
         position: absolute;
         bottom: 0;
@@ -198,7 +225,7 @@ export class HintComponent {
         pointer-events: none;
       }
 
-      .hint-component.minimized {
+      .hint-component-box.minimized {
         width: 48px;
         height: 48px;
         max-height: 48px;
@@ -218,8 +245,8 @@ export class HintComponent {
         width: 100%;
       }
 
-      .hint-component.minimized .hint-content,
-      .hint-component.minimized .hint-footer {
+      .hint-component-box.minimized .hint-content,
+      .hint-component-box.minimized .hint-footer {
         opacity: 0;
         pointer-events: none;
         transition: opacity 0.2s ease;
@@ -240,7 +267,7 @@ export class HintComponent {
         pointer-events: none;
       }
 
-      .hint-component.minimized .hint-minimized-icon {
+      .hint-component-box.minimized .hint-minimized-icon {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1);
         transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s;
@@ -369,11 +396,19 @@ export class HintComponent {
       }
 
       @media (max-width: 768px) {
-        .hint-component {
-          bottom: 60px;
-          right: 10px;
-          left: 10px;
+        .hint-component-layout {
+          bottom: 50px;
+          padding-bottom: 10px;
+        }
+
+        .hint-component-inner {
+          padding: 0 10px;
+          justify-content: center; /* Center on mobile if full width */
+        }
+
+        .hint-component-box {
           width: auto;
+          flex: 1;
           max-width: none;
           min-width: 0;
           padding: 16px;
@@ -388,9 +423,9 @@ export class HintComponent {
           font-size: 0.8rem;
         }
 
-        .hint-component.minimized {
+        .hint-component-box.minimized {
           width: 48px;
-          left: auto; /* Reset left */
+          flex: none;
         }
         
         .desktop-text { display: none !important; }
