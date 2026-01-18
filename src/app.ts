@@ -349,6 +349,14 @@ export class App {
       }
     }
 
+    // Only show hand detection status if debug mode is enabled
+    // This reduces visual clutter during normal usage
+    const isDebug = this.debugComponent?.isVisibleState() ?? false;
+    if (!isDebug) {
+      this.statusIndicator?.hide();
+      return;
+    }
+
     if (handCount <= 0) {
       this.updateStatus('No hands detected', 'ready');
       return;
@@ -675,7 +683,7 @@ export class App {
     this.updateHandStatus(0);
 
     // Show UI elements
-    this.statusIndicator?.show();
+
     this.footer?.show();
     this.hintComponent?.update('galaxy');
     this.hintComponent?.show();
@@ -726,7 +734,7 @@ export class App {
     this.updateHandStatus(0);
 
     // Show UI elements
-    this.statusIndicator?.show();
+
     this.footer?.show();
     this.hintComponent?.update('foggy-mirror');
     this.hintComponent?.show();
@@ -799,7 +807,7 @@ export class App {
     this.updateHandStatus(0);
 
     // Show UI elements
-    this.statusIndicator?.show();
+
     this.footer?.show();
     this.hintComponent?.update('cosmic-slash');
     this.hintComponent?.show();
@@ -853,7 +861,7 @@ export class App {
     this.updateHandStatus(0);
 
     // Show UI elements
-    this.statusIndicator?.show();
+
     this.footer?.show();
     this.hintComponent?.update('iron-man-workshop');
     this.hintComponent?.show();
