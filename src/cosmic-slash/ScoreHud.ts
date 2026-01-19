@@ -207,6 +207,13 @@ export class ScoreHud {
   }
 
   private createDOM(): void {
+    // Create a layout wrapper for max-width constraint
+    const layoutWrapper = document.createElement('div');
+    layoutWrapper.className = 'score-hud-layout';
+
+    const innerWrapper = document.createElement('div');
+    innerWrapper.className = 'score-hud-inner';
+
     this.element = document.createElement('div');
     this.element.className = `score-hud score-hud--${this.config.anchor}`;
 
@@ -241,12 +248,34 @@ export class ScoreHud {
       this.progressCircleEl.style.strokeDashoffset = `${this.progressCircumference}`;
     }
 
+    innerWrapper.appendChild(this.element);
+    layoutWrapper.appendChild(innerWrapper);
+
     const style = document.createElement('style');
     style.textContent = `
+      /* Layout Container for max-width constraint */
+      .score-hud-layout {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 120;
+      }
+
+      .score-hud-inner {
+        position: relative;
+        max-width: 1280px;
+        height: 100%;
+        margin: 0 auto;
+        padding: 0 16px;
+        box-sizing: border-box;
+      }
+
       .score-hud {
         position: absolute;
         top: 20px;
-        z-index: 120;
         pointer-events: none;
         font-family: 'Nunito', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
         color: rgba(255, 255, 255, 0.92);
@@ -402,7 +431,7 @@ export class ScoreHud {
       }
     `;
 
-    this.element.appendChild(style);
-    this.container.appendChild(this.element);
+    layoutWrapper.appendChild(style);
+    this.container.appendChild(layoutWrapper);
   }
 }

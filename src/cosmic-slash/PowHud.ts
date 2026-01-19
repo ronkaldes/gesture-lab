@@ -172,6 +172,13 @@ export class PowHud {
   }
 
   private createDOM(): void {
+    // Create a layout wrapper for max-width constraint
+    const layoutWrapper = document.createElement('div');
+    layoutWrapper.className = 'pow-hud-layout';
+
+    const innerWrapper = document.createElement('div');
+    innerWrapper.className = 'pow-hud-inner';
+
     this.element = document.createElement('div');
     this.element.className = 'pow-hud';
 
@@ -203,8 +210,11 @@ export class PowHud {
     this.valueEl = this.element.querySelector('.pow-hud__value');
     this.particlesEl = this.element.querySelector('.pow-hud__particles');
 
+    innerWrapper.appendChild(this.element);
+    layoutWrapper.appendChild(innerWrapper);
+
     this.injectStyles();
-    this.container.appendChild(this.element);
+    this.container.appendChild(layoutWrapper);
   }
 
   private injectStyles(): void {
@@ -215,6 +225,28 @@ export class PowHud {
     style.id = styleId;
     style.textContent = `
       /* ===========================
+         Layout Container for max-width constraint
+         =========================== */
+      .pow-hud-layout {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 90;
+      }
+
+      .pow-hud-inner {
+        position: relative;
+        max-width: 1280px;
+        height: 100%;
+        margin: 0 auto;
+        padding: 0 16px;
+        box-sizing: border-box;
+      }
+
+      /* ===========================
          MOBILE-FIRST: Horizontal layout at bottom center
          =========================== */
       .pow-hud {
@@ -224,7 +256,6 @@ export class PowHud {
         transform: translateX(-50%) translateY(20px);
         opacity: 0;
         transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        z-index: 90;
         font-family: 'Orbitron', sans-serif;
         pointer-events: none;
       }
