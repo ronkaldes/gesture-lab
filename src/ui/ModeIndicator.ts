@@ -81,11 +81,17 @@ export class ModeIndicator {
       }
 
       .mode-indicator-inner {
-        max-width: 1280px;
         margin: 0 auto;
         padding: 0 16px;
         display: flex;
         justify-content: flex-start;
+      }
+
+      /* Apply max-width constraint only above 2000px viewport */
+      @media (min-width: 3000px) {
+        .mode-indicator-inner {
+          max-width: 1920px;
+        }
       }
 
       .mode-indicator-box {

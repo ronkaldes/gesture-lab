@@ -239,11 +239,17 @@ export class PowHud {
 
       .pow-hud-inner {
         position: relative;
-        max-width: 1280px;
         height: 100%;
         margin: 0 auto;
         padding: 0 16px;
         box-sizing: border-box;
+      }
+
+      /* Apply max-width constraint only above 2000px viewport */
+      @media (min-width: 3000px) {
+        .pow-hud-inner {
+          max-width: 1920px;
+        }
       }
 
       /* ===========================

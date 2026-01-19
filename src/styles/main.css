@@ -356,7 +356,6 @@ canvas {
 }
 
 .app-footer-premium .footer-inner {
-  max-width: 1280px;
   margin: 0 auto;
   padding: 0 16px;
   display: flex;
@@ -364,6 +363,13 @@ canvas {
   align-items: center;
   justify-content: space-between;
   min-height: 24px; /* Further reduced from 32px */
+}
+
+/* Apply max-width constraint only above 2000px viewport */
+@media (min-width: 3000px) {
+  .app-footer-premium .footer-inner {
+    max-width: 1920px;
+  }
 }
 
 /* Left section: Logo + Year */
