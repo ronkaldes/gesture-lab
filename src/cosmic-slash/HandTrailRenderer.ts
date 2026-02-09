@@ -13,7 +13,7 @@
  */
 
 import * as THREE from 'three';
-import type { HandLandmarkerResult, NormalizedLandmark } from '@mediapipe/tasks-vision';
+import { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
 // Premium Lightsaber-Inspired Trail Shader
 // Ultra-sharp white core with energy field and soft aura
@@ -180,12 +180,7 @@ const DEFAULT_CONFIG: CosmicTrailConfig = {
   sparkleBaseSize: 9.0,
 };
 
-// Maximum distance (in pixels) to match a new detection to existing trail
-const MATCH_THRESHOLD = 150;
-// Time (ms) after which an unmatched trail starts fading
-const FADE_DELAY = 100;
 // Maximum number of simultaneous trails
-const MAX_TRAILS = 2;
 
 class LowPassFilter {
   private hatX: number | null = null;
@@ -546,6 +541,10 @@ export class HandTrailRenderer {
     return this.enabled;
   }
 
+  getPointCount(): number {
+    return this.trails.reduce((count, trail) => count + trail.points.length, 0);
+  }
+
   private handleResize = (): void => {
     const rect = this.container.getBoundingClientRect();
     this.width = rect.width;
@@ -615,105 +614,62 @@ export class HandTrailRenderer {
   }
 
   /**
-   * Update trails from hand tracking results
+   * Update trails from direct position input (Mudra)
    */
-  update(handResults: HandLandmarkerResult | null, deltaTime: number): void {
+  updateFromPosition(x: number, y: number, connected: boolean, deltaTime: number): void {
     this.time += deltaTime;
     this.material.uniforms.uTime.value = this.time;
     this.sparkleSystem.setIntensity(this.config.intensityBoost);
 
-    // Early return if disabled - don't accumulate trail points during POW mode
-    if (!this.enabled) {
-      // Continue fading existing trails even when disabled
+    if (!this.enabled || !connected) {
       for (const trail of this.trails) {
         this.fadeTrail(trail);
       }
-
-      // Remove dead trails
-      this.trails = this.trails.filter((trail) => {
-        if (trail.points.length === 0 && !trail.isActive) {
-          this.scene.remove(trail.mesh);
-          trail.geometry.dispose();
-          return false;
-        }
-        return true;
-      });
-
-      // Update geometries for fading trails
+      this.cleanupDeadTrails();
       for (const trail of this.trails) {
         this.updateGeometry(trail);
       }
-
       this.sparkleSystem.update(deltaTime);
       return;
     }
 
     const currentTime = performance.now();
 
-    // Collect all finger tip positions from this frame
-    const detections: { x: number; y: number }[] = [];
+    // Mudra provides a single "hand" cursor
+    // Mirror has already been handled in unproject/anchor if needed, 
+    // but typically InputState.cursor is normalized 0-1.
+    const screenX = x * this.width;
+    const screenY = y * this.height;
 
-    if (handResults?.landmarks) {
-      for (const landmarks of handResults.landmarks) {
-        const anchor = this.getHandAnchor(landmarks);
-        detections.push(anchor);
+    // Use a single trail (id 0) for Mudra
+    let trail = this.trails.find(t => t.id === 0);
+    if (!trail) {
+      trail = this.createTrail(screenX, screenY);
+      trail.id = 0; // Force ID 0
+      this.trails.push(trail);
+    }
+
+    this.updateTrail(trail, screenX, screenY, currentTime);
+    trail.isActive = true;
+
+    // Update other trails (if any existed from previous mode)
+    for (const t of this.trails) {
+      if (t.id !== 0) {
+        this.fadeTrail(t);
       }
     }
 
-    // Match detections to existing trails using nearest neighbor
-    const matchedTrails = new Set<number>();
-    const matchedDetections = new Set<number>();
+    this.cleanupDeadTrails();
 
-    // For each detection, find the closest trail
-    for (let di = 0; di < detections.length; di++) {
-      const det = detections[di];
-      let bestTrailIdx = -1;
-      let bestDist = MATCH_THRESHOLD;
-
-      for (let ti = 0; ti < this.trails.length; ti++) {
-        if (matchedTrails.has(ti)) continue;
-
-        const trail = this.trails[ti];
-        const dx = det.x - trail.lastScreenX;
-        const dy = det.y - trail.lastScreenY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestTrailIdx = ti;
-        }
-      }
-
-      if (bestTrailIdx >= 0) {
-        // Match found - update existing trail
-        matchedTrails.add(bestTrailIdx);
-        matchedDetections.add(di);
-        this.updateTrail(this.trails[bestTrailIdx], det.x, det.y, currentTime);
-      }
+    for (const t of this.trails) {
+      this.updateGeometry(t);
     }
 
-    // Create new trails for unmatched detections (up to MAX_TRAILS)
-    for (let di = 0; di < detections.length; di++) {
-      if (matchedDetections.has(di)) continue;
-      if (this.trails.length >= MAX_TRAILS) break;
+    this.updateSparkles(deltaTime);
+    this.sparkleSystem.update(deltaTime);
+  }
 
-      const det = detections[di];
-      const newTrail = this.createTrail(det.x, det.y);
-      this.trails.push(newTrail);
-      this.updateTrail(newTrail, det.x, det.y, currentTime);
-    }
-
-    // Fade unmatched trails
-    for (let ti = 0; ti < this.trails.length; ti++) {
-      if (matchedTrails.has(ti)) continue;
-
-      const trail = this.trails[ti];
-      if (currentTime - trail.lastUpdateTime > FADE_DELAY) {
-        this.fadeTrail(trail);
-      }
-    }
-
-    // Remove dead trails
+  private cleanupDeadTrails(): void {
     this.trails = this.trails.filter((trail) => {
       if (trail.points.length === 0 && !trail.isActive) {
         this.scene.remove(trail.mesh);
@@ -722,14 +678,6 @@ export class HandTrailRenderer {
       }
       return true;
     });
-
-    // Update all geometries
-    for (const trail of this.trails) {
-      this.updateGeometry(trail);
-    }
-
-    this.updateSparkles(deltaTime);
-    this.sparkleSystem.update(deltaTime);
   }
 
   private updateSparkles(deltaTime: number): void {
@@ -778,7 +726,7 @@ export class HandTrailRenderer {
    * not just the index fingertip. Bias toward palm base + fingertips
    * for stability while still feeling responsive.
    */
-  private getHandAnchor(landmarks: NormalizedLandmark[]): {
+  _getHandAnchor(landmarks: NormalizedLandmark[]): {
     x: number;
     y: number;
   } {

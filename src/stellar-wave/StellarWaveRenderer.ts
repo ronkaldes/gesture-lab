@@ -452,6 +452,16 @@ export class StellarWaveRenderer {
   }
 
   /**
+   * Set the wave amplitude (dot size scaling)
+   * @param amplitude - Amplitude multiplier
+   */
+  setAmplitude(amplitude: number): void {
+    if (this.material) {
+      this.uniforms.uRippleSize.value = this.config.rippleDotRadius * amplitude;
+    }
+  }
+
+  /**
    * Set the Gravity Well attraction point
    * @param x - X position in normalized coordinates (0-1), or null to clear
    * @param y - Y position in normalized coordinates (0-1), or null to clear

@@ -234,6 +234,41 @@ export class IncandescentAnimator {
   }
 
   /**
+   * Sets the intensity directly, bypassing physics-based animation.
+   * Useful for real-time pressure-based modulation.
+   *
+   * @param intensity - Normalized intensity (0-1)
+   */
+  setDirectIntensity(intensity: number): void {
+    this.killActiveTween();
+    this.currentState.intensity = intensity;
+    this.currentState.colorTemperature = this.calculateColorTemperature(intensity);
+    this.onUpdate(this.currentState);
+  }
+
+  /**
+   * Updates the animator state based on deltaTime (not used with GSAP but for compatibility).
+   * @param _deltaTime - Time since last frame
+   */
+  update(_deltaTime: number): void {
+    // GSAP handles its own updates
+  }
+
+  /**
+   * Alias for turnOn (optional but requested by some controllers)
+   */
+  warmUp(): Promise<void> {
+    return this.turnOn();
+  }
+
+  /**
+   * Alias for turnOff (optional but requested by some controllers)
+   */
+  coolDown(): Promise<void> {
+    return this.turnOff();
+  }
+
+  /**
    * Gets the current animation state.
    *
    * @returns Current light animation state

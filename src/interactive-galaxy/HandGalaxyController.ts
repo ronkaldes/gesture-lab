@@ -1,67 +1,55 @@
 /**
  * HandGalaxyController Module
- * Bridge between hand tracking and galaxy rendering
- * Handles coordinate transformation, smoothing, and interaction logic
- *
- * Phase 3.2 Enhancement:
- * - Pinch gesture → Mini star burst
+ * Bridge between Mudra Band and galaxy rendering
  */
 
 import * as THREE from 'three';
-import { HandLandmarkerResult, NormalizedLandmark } from '@mediapipe/tasks-vision';
-import { HandTracker } from '../shared/HandTracker';
+import { InputManager } from '../shared/InputManager';
+import { InputState } from '../shared/InputTypes';
 import { GalaxyRenderer } from './GalaxyRenderer';
-import { GestureDetector } from '../shared/GestureDetector';
 import { StarBurstEffect } from './StarBurstEffect';
-import { HandLandmarkIndex } from '../shared/HandTypes';
-import { GestureState, Handedness, PinchGestureEvent } from '../shared/GestureTypes';
 import { ExplosionState } from './types';
-import { distance3D, midpoint3D, normalizedToWorld, mapDistanceToScale } from '../utils/math';
+import { normalizedToWorld } from '../utils/math';
 import { ScalarSmoother, Vector3Smoother, EulerSmoother } from '../utils/smoothing';
 
 /**
  * Interaction configuration
  */
 interface InteractionConfig {
-  /** Minimum hand distance for galaxy to appear (normalized) */
-  minHandDistance: number;
-  /** Maximum hand distance for full galaxy size (normalized) */
-  maxHandDistance: number;
+  /** Minimum input distance for galaxy to appear (normalized) */
+  minDistance: number;
+  /** Maximum input distance for full galaxy size (normalized) */
+  maxDistance: number;
   /** Smoothing factor for scale (0-1) */
   scaleSmoothingFactor: number;
   /** Smoothing factor for position (0-1) */
   positionSmoothingFactor: number;
   /** Smoothing factor for rotation (0-1) */
   rotationSmoothingFactor: number;
-  /** Grace period in ms to keep galaxy visible after losing hands */
+  /** Grace period in ms to keep galaxy visible after losing input */
   gracePeriodMs: number;
-  /** Enable Phase 3.2 pinch gesture feature */
+  /** Enable gestures */
   enableGestures: boolean;
 }
 
 const DEFAULT_INTERACTION_CONFIG: InteractionConfig = {
-  minHandDistance: 0.06,
-  maxHandDistance: 0.35,
-  scaleSmoothingFactor: 0.2, // Smooth resizing
-  positionSmoothingFactor: 0.25, // Smooth positioning
-  rotationSmoothingFactor: 0.2, // Smooth rotation
+  minDistance: 0.06,
+  maxDistance: 0.35,
+  scaleSmoothingFactor: 0.2,
+  positionSmoothingFactor: 0.25,
+  rotationSmoothingFactor: 0.2,
   gracePeriodMs: 500,
-  enableGestures: true, // Phase 3.2: Pinch → Star Burst
+  enableGestures: true,
 };
 
 /**
- * HandGalaxyController - Manages interaction between hands and galaxy
- *
- * Phase 3.2 Feature:
- * - Pinch: Thumb+Index pinch triggers star burst effect
+ * HandGalaxyController - Manages interaction between Mudra and galaxy
  */
 export class HandGalaxyController {
-  private handTracker: HandTracker;
+  private inputManager: InputManager;
   private galaxyRenderer: GalaxyRenderer;
   private config: InteractionConfig;
 
-  // Phase 3.2: Gesture detection and effects
-  private gestureDetector: GestureDetector;
   private starBurstEffect: StarBurstEffect | null = null;
 
   // Smoothers for stable tracking
@@ -70,52 +58,26 @@ export class HandGalaxyController {
   private rotationSmoother: EulerSmoother;
 
   // State tracking
-  private lastHandsDetectedTime: number = 0;
+  private lastInputTime: number = 0;
   private isGalaxyActive: boolean = false;
   private lastTimestamp: number = 0;
-  private lastHandCount: number = 0;
-
-  // Explosion lifecycle tracking
-  private hasExplodedThisLife: boolean = false; // Track if current galaxy has exploded
+  private hasExplodedThisLife: boolean = false;
 
   // Debug state
   private debugEnabled: boolean = false;
   private debugCallback: ((info: DebugInfo) => void) | null = null;
 
-  /**
-   * Calculate palm center from the four MCP (Metacarpophalangeal) knuckles
-   * This provides a more accurate hand center than just the wrist
-   */
-  private getPalmCenter(landmarks: NormalizedLandmark[]): NormalizedLandmark {
-    const indexMCP = landmarks[HandLandmarkIndex.INDEX_FINGER_MCP];
-    const middleMCP = landmarks[HandLandmarkIndex.MIDDLE_FINGER_MCP];
-    const ringMCP = landmarks[HandLandmarkIndex.RING_FINGER_MCP];
-    const pinkyMCP = landmarks[HandLandmarkIndex.PINKY_MCP];
-
-    return {
-      x: (indexMCP.x + middleMCP.x + ringMCP.x + pinkyMCP.x) / 4,
-      y: (indexMCP.y + middleMCP.y + ringMCP.y + pinkyMCP.y) / 4,
-      z: (indexMCP.z + middleMCP.z + ringMCP.z + pinkyMCP.z) / 4,
-      visibility:
-        (indexMCP.visibility! +
-          middleMCP.visibility! +
-          ringMCP.visibility! +
-          pinkyMCP.visibility!) /
-        4,
-    };
-  }
-
   constructor(
-    handTracker: HandTracker,
+    inputManager: InputManager,
     galaxyRenderer: GalaxyRenderer,
     config: Partial<InteractionConfig> = {}
   ) {
-    this.handTracker = handTracker;
+    this.inputManager = inputManager;
     this.galaxyRenderer = galaxyRenderer;
     this.config = { ...DEFAULT_INTERACTION_CONFIG, ...config };
 
     // Initialize smoothers
-    this.scaleSmoother = new ScalarSmoother(0, this.config.scaleSmoothingFactor);
+    this.scaleSmoother = new ScalarSmoother(1, this.config.scaleSmoothingFactor);
     this.positionSmoother = new Vector3Smoother(
       new THREE.Vector3(0, 0, 0),
       this.config.positionSmoothingFactor
@@ -124,240 +86,98 @@ export class HandGalaxyController {
       new THREE.Euler(0, 0, 0),
       this.config.rotationSmoothingFactor
     );
-
-    // Phase 3.2: Initialize gesture detector
-    this.gestureDetector = new GestureDetector();
   }
 
   /**
-   * Initialize Phase 3.2 star burst effect (must be called after GalaxyRenderer.initialize())
-   * This sets up the StarBurst effect in the scene
-   *
-   * @param scene - Three.js scene from GalaxyRenderer
+   * Initialize star burst effect
    */
   initializeEffects(scene: THREE.Scene): void {
     if (!this.config.enableGestures) return;
 
-    // Initialize star burst effect for pinch gesture
     this.starBurstEffect = new StarBurstEffect(
       scene,
       {
-        particleCount: 300, // Optimized particle count
+        particleCount: 300,
         duration: 1.5,
         initialVelocity: 2.5,
         color: new THREE.Color(0xffffff),
       },
       3
-    ); // Max 3 concurrent bursts
-
-    console.log('[HandGalaxyController] Phase 3.2 star burst effect initialized');
+    );
   }
 
   /**
-   * Main update method - call this every frame
-   * @param timestamp - Current timestamp from requestAnimationFrame
+   * Main update method
    */
-  update(timestamp: number): void {
-    // Calculate delta time
+  update(timestamp: number, input: InputState): void {
     const deltaTime = this.lastTimestamp > 0 ? (timestamp - this.lastTimestamp) / 1000 : 0;
     this.lastTimestamp = timestamp;
 
-    // Update galaxy animation time
     this.galaxyRenderer.updateTime(deltaTime);
 
-    // Update Phase 3.2 star burst effect
     if (this.config.enableGestures && this.starBurstEffect) {
       this.starBurstEffect.update(deltaTime);
     }
 
-    // Detect hands
-    const result = this.handTracker.detectHands(timestamp);
-
-    // Track hand count for status
-    this.lastHandCount = result?.landmarks.length ?? 0;
-
-    // Process hand detection results
-    if (result && result.landmarks.length >= 2) {
-      // Two hands detected
-      this.lastHandsDetectedTime = timestamp;
-      this.processHandInteraction(result, timestamp);
-
-      // Phase 3.2: Process gestures only when galaxy is active (two hands)
-      if (this.config.enableGestures) {
-        this.processGestures(result, timestamp);
-      }
-    } else if (result && result.landmarks.length === 1) {
-      // Single hand - treat as no hands (galaxy needs two hands)
-      this.handleNoHands(timestamp);
+    if (input.connected) {
+      this.lastInputTime = timestamp;
+      this.processInteraction(input);
     } else {
-      // No hands detected - check grace period
-      this.handleNoHands(timestamp);
+      this.handleNoInput(timestamp);
     }
 
-    // Render the galaxy
     this.galaxyRenderer.render();
   }
 
-  /**
-   * Process Phase 3.2 gesture (pinch only)
-   */
-  private processGestures(result: HandLandmarkerResult, timestamp: number): void {
-    // Extract handedness from result
-    const handedness: Handedness[] = result.handedness.map((h) => {
-      const category = h[0]?.categoryName?.toLowerCase();
-      return category === 'left' || category === 'right' ? category : 'unknown';
+  private processInteraction(input: InputState): void {
+    const worldPos = normalizedToWorld({
+      x: input.cursor.x,
+      y: input.cursor.y,
+      z: 0.5,
     });
 
-    // Run gesture detection
-    const gestureResult = this.gestureDetector.detect(result.landmarks, handedness, timestamp);
+    const smoothedPosition = this.positionSmoother.update(worldPos);
 
-    // Process pinch gesture → Star Burst (Phase 3.2)
-    if (gestureResult.pinch) {
-      this.handlePinchGesture(gestureResult.pinch);
-    }
-  }
-
-  /**
-   * Handle pinch gesture - trigger star burst effect
-   * Per DESIGN-v2.md Phase 3.2
-   * Only triggers when galaxy is visible, active, and in normal state (not exploding)
-   */
-  private handlePinchGesture(event: PinchGestureEvent): void {
-    if (
-      event.state === GestureState.STARTED &&
-      this.starBurstEffect &&
-      this.isGalaxyActive &&
-      this.galaxyRenderer.isVisible() &&
-      this.galaxyRenderer.getExplosionState() === ExplosionState.NORMAL
-    ) {
-      console.log(
-        `[HandGalaxyController] Pinch detected (${event.data.handedness}) - triggering star burst`
-      );
-      this.starBurstEffect.trigger(event.data.position);
-    }
-  }
-
-  /**
-   * Get the number of hands detected in the last frame
-   */
-  getHandCount(): number {
-    return this.lastHandCount;
-  }
-
-  /**
-   * Process interaction when two hands are detected
-   */
-  private processHandInteraction(result: HandLandmarkerResult, _timestamp: number): void {
-    // Get palm center positions for both hands (average of MCP knuckles)
-    const palm1 = this.getPalmCenter(result.landmarks[0]);
-    const palm2 = this.getPalmCenter(result.landmarks[1]);
-
-    // Calculate hand distance (normalized coordinates)
-    const distance = distance3D(palm1, palm2);
-
-    // Update galaxy renderer with current hand distance for gravitational lensing
-    this.galaxyRenderer.setHandDistance(distance);
-
-    // Map distance to scale
-    const targetScale = mapDistanceToScale(
-      distance,
-      this.config.minHandDistance,
-      this.config.maxHandDistance
-    );
-
-    // Smooth the scale
+    // Pressure maps to scale (0.5 to 1.5)
+    const targetScale = 0.5 + input.pressure;
     const smoothedScale = this.scaleSmoother.update(targetScale);
 
-    // === BIG BANG EXPLOSION TRIGGER ===
-    // Trigger when galaxy shrinks to critical mass (hands close but still tracked)
-    // Only trigger once per galaxy lifecycle - not repeatedly
-    if (smoothedScale < 0.01 && smoothedScale > 0 && !this.hasExplodedThisLife) {
-      console.log(
-        `[HandGalaxyController] Critical mass! scale=${smoothedScale.toFixed(
-          3
-        )} - Triggering explosion!`
-      );
+    // Gestures
+    if (input.lastGesture?.type === 'tap' && this.starBurstEffect) {
+      this.starBurstEffect.trigger(smoothedPosition);
+    }
+
+    if (input.lastGesture?.type === 'twist' && !this.hasExplodedThisLife) {
       this.galaxyRenderer.triggerExplosion();
-      this.hasExplodedThisLife = true; // Mark this galaxy as exploded
+      this.hasExplodedThisLife = true;
     }
 
-    // === BLOCK UPDATES DURING EXPLOSION ===
-    // During explosion (singularity → exploding → fading), ignore hand input
-    // This prevents overlap and ensures clean cycle: explosion → clear screen → rebirth
-    const explosionState = this.galaxyRenderer.getExplosionState();
-    if (explosionState !== 0) {
-      // 0 = ExplosionState.NORMAL
-      // Explosion in progress - skip all normal updates
-      return;
-    }
-
-    // Calculate midpoint in normalized coordinates (galaxy center at palm midpoint)
-    const midpointNorm = midpoint3D(palm1, palm2);
-
-    // Convert to world space for rendering
-    const worldMidpoint = normalizedToWorld({
-      x: midpointNorm.x,
-      y: midpointNorm.y,
-      z: midpointNorm.z,
-    });
-
-    // Smooth the position
-    const smoothedPosition = this.positionSmoother.update(worldMidpoint);
-
-    // Calculate rotation based on the axis between hands
-    // This creates a more intuitive "galaxy between hands" effect
-    const rotation = this.calculateAxisBasedRotation(palm1, palm2);
-    const smoothedRotation = this.rotationSmoother.update(rotation);
-
-    // Update galaxy state
-    const shouldShow = smoothedScale > 0.01;
-
-    if (shouldShow && !this.isGalaxyActive) {
+    if (!this.isGalaxyActive && smoothedScale > 0.01) {
       this.galaxyRenderer.setVisible(true);
       this.isGalaxyActive = true;
-      // Reset explosion flag for new galaxy lifecycle
       this.hasExplodedThisLife = false;
-      console.log('[HandGalaxyController] New galaxy spawned - lifecycle reset');
     }
 
-    // Apply transforms
     this.galaxyRenderer.setScale(smoothedScale);
     this.galaxyRenderer.setPosition(smoothedPosition.x, smoothedPosition.y, smoothedPosition.z);
-    this.galaxyRenderer.setRotation(smoothedRotation);
+    this.galaxyRenderer.setHandDistance(input.pressure * 0.5);
 
-    // Debug output
     if (this.debugEnabled && this.debugCallback) {
       this.debugCallback({
-        handsDetected: 2,
-        distance,
+        handsDetected: 1,
+        distance: input.pressure,
         scale: smoothedScale,
         position: smoothedPosition,
-        rotation: smoothedRotation,
+        rotation: this.rotationSmoother.value,
       });
     }
   }
 
-  /**
-   * Handle case when less than two hands are detected
-   */
-  private handleNoHands(timestamp: number): void {
-    const timeSinceLastHands = timestamp - this.lastHandsDetectedTime;
+  private handleNoInput(timestamp: number): void {
+    const timeSinceLastInput = timestamp - this.lastInputTime;
 
-    // === EXPLOSION TRIGGER: Hands closed together ===
-    // If we just lost hands AND scale was very small, hands likely closed together
-    // MediaPipe loses tracking when hands overlap - trigger explosion!
-    const currentScale = this.scaleSmoother.value;
-    if (this.lastHandCount === 2 && currentScale < 0.3) {
-      console.log('[HandGalaxyController] Hands lost while close - triggering explosion!');
-      this.galaxyRenderer.triggerExplosion();
-      // Don't fade out - let explosion play
-      return;
-    }
-
-    if (timeSinceLastHands > this.config.gracePeriodMs) {
-      // Grace period expired - fade out galaxy
+    if (timeSinceLastInput > this.config.gracePeriodMs) {
       const fadeScale = this.scaleSmoother.update(0);
-
       if (fadeScale < 0.01 && this.isGalaxyActive) {
         this.galaxyRenderer.setVisible(false);
         this.isGalaxyActive = false;
@@ -365,9 +185,7 @@ export class HandGalaxyController {
         this.galaxyRenderer.setScale(fadeScale);
       }
     }
-    // Within grace period - keep galaxy visible at current state
 
-    // Debug output
     if (this.debugEnabled && this.debugCallback) {
       this.debugCallback({
         handsDetected: 0,
@@ -379,116 +197,33 @@ export class HandGalaxyController {
     }
   }
 
-  /**
-   * Calculate rotation based on the axis between two palms
-   * This creates an intuitive "galaxy disc between hands" effect
-   * The galaxy disc aligns perpendicular to the hand-to-hand axis
-   */
-  private calculateAxisBasedRotation(
-    palm1: { x: number; y: number; z: number },
-    palm2: { x: number; y: number; z: number }
-  ): THREE.Euler {
-    // Vector from hand1 to hand2
-    const handAxis = new THREE.Vector3(
-      palm2.x - palm1.x,
-      -(palm2.y - palm1.y), // Flip Y for screen-to-3D conversion
-      palm2.z - palm1.z
-    );
-
-    // Default up vector
-    const worldUp = new THREE.Vector3(0, 1, 0);
-
-    // Calculate the right vector perpendicular to hand axis and up
-    const right = new THREE.Vector3().crossVectors(worldUp, handAxis).normalize();
-
-    // If hands are vertically aligned, use different reference
-    if (right.length() < 0.1) {
-      right.set(1, 0, 0);
-    }
-
-    // Calculate the proper up vector
-    const up = new THREE.Vector3().crossVectors(handAxis, right).normalize();
-
-    // The galaxy disc should be perpendicular to the hand axis
-    // Galaxy renders flat without additional tilt for best initial viewing experience
-    const baseTilt = 90 * (Math.PI / 180); // Convert 90 degrees to radians
-
-    // Create rotation that aligns galaxy disc perpendicular to hand axis
-    const matrix = new THREE.Matrix4();
-    const forward = handAxis.clone().normalize();
-    matrix.makeBasis(right, up, forward);
-
-    const euler = new THREE.Euler().setFromRotationMatrix(matrix);
-
-    // Apply base tilt (currently 0 for flat rendering)
-    euler.x += baseTilt;
-
-    return euler;
-  }
-
-  /**
-   * Set distance thresholds
-   */
-  setDistanceThresholds(min: number, max: number): void {
-    this.config.minHandDistance = min;
-    this.config.maxHandDistance = max;
-  }
-
-  /**
-   * Set smoothing factor (0-1)
-   */
-  setSmoothingFactor(factor: number): void {
-    this.scaleSmoother.setSmoothingFactor(factor);
-    this.positionSmoother.setSmoothingFactor(factor);
-    this.rotationSmoother.setSmoothingFactor(factor);
-  }
-
-  /**
-   * Enable debug mode with callback
-   */
   enableDebug(callback: (info: DebugInfo) => void): void {
     this.debugEnabled = true;
     this.debugCallback = callback;
   }
 
-  /**
-   * Disable debug mode
-   */
   disableDebug(): void {
     this.debugEnabled = false;
     this.debugCallback = null;
   }
 
-  /**
-   * Reset controller state
-   */
   reset(): void {
     this.scaleSmoother.reset(0);
     this.positionSmoother.reset(new THREE.Vector3(0, 0, 0));
     this.rotationSmoother.reset(new THREE.Euler(0, 0, 0));
-    this.lastHandsDetectedTime = 0;
+    this.lastInputTime = 0;
     this.isGalaxyActive = false;
     this.galaxyRenderer.setVisible(false);
     this.galaxyRenderer.setScale(0);
-
-    // Reset Phase 3.2 components
-    this.gestureDetector.reset();
     this.starBurstEffect?.clear();
   }
 
-  /**
-   * Clean up resources
-   */
   dispose(): void {
-    // Clean up Phase 3.2 star burst effect
     this.starBurstEffect?.dispose();
     this.starBurstEffect = null;
   }
 }
 
-/**
- * Debug information interface
- */
 export interface DebugInfo {
   handsDetected: number;
   distance: number;

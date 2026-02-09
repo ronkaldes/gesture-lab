@@ -3,11 +3,11 @@ import { CosmicObjectType } from './types';
 export type ScoreChangeEvent =
   | { type: 'reset' }
   | {
-      type: 'scoreChanged';
-      delta: number;
-      reason: 'slice' | 'miss' | 'combo' | 'boss';
-      objectType?: CosmicObjectType;
-    }
+    type: 'scoreChanged';
+    delta: number;
+    reason: 'slice' | 'miss' | 'combo' | 'boss';
+    objectType?: CosmicObjectType;
+  }
   | { type: 'levelChanged'; previousLevel: number; newLevel: number };
 
 export interface ScoreState {
@@ -187,7 +187,7 @@ export class ScoreManager {
     }
   }
 
-  private getState(): ScoreState {
+  public getState(): ScoreState {
     const threshold = this.levelThresholds[this.level] ?? 0;
 
     if (this.level >= this.maxLevel) {

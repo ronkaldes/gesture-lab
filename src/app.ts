@@ -18,7 +18,8 @@ import { LightBulbController } from './light-bulb/LightBulbController';
 import { LightBulbDebugInfo } from './light-bulb/types';
 import { MagneticClutterController } from './magnetic-clutter/MagneticClutterController';
 import { MagneticClutterDebugInfo } from './magnetic-clutter/types';
-import { HandTracker } from './shared/HandTracker';
+import { InputManager } from './shared/InputManager';
+import { InputState } from './shared/InputTypes';
 import { DebugComponent } from './ui/DebugComponent';
 import { Footer } from './ui/Footer';
 import { HintComponent } from './ui/HintComponent';
@@ -52,7 +53,7 @@ const DEFAULT_APP_CONFIG: AppConfig = {
  * Main Application Class
  */
 export class App {
-  private handTracker: HandTracker;
+  private inputManager: InputManager;
   private galaxyRenderer: GalaxyRenderer | null = null;
   private controller: HandGalaxyController | null = null;
   private foggyMirrorController: FoggyMirrorController | null = null;
@@ -86,7 +87,7 @@ export class App {
   constructor(container: HTMLElement, config: Partial<AppConfig> = {}) {
     this.container = container;
     this.config = { ...DEFAULT_APP_CONFIG, ...config };
-    this.handTracker = new HandTracker();
+    this.inputManager = new InputManager();
     this.fpsCounter = new FpsCounter();
   }
 
@@ -114,9 +115,9 @@ export class App {
       // Check browser support
       this.checkBrowserSupport();
 
-      // Initialize hand tracker (preload)
-      this.updateStatus('Loading hand tracking model...', 'loading');
-      await this.handTracker.initialize(this.videoElement!);
+      // Initialize input manager
+      this.updateStatus('Connecting to Mudra...', 'loading');
+      await this.inputManager.initialize();
 
       // Show landing page
       this.showLandingPage();
@@ -134,25 +135,6 @@ export class App {
   private createDOMStructure(): void {
     // Clear container
     this.container.innerHTML = '';
-
-    // Create video element for webcam
-    this.videoElement = document.createElement('video');
-    this.videoElement.id = 'webcam-video';
-    this.videoElement.autoplay = true;
-    this.videoElement.playsInline = true;
-    this.videoElement.muted = true;
-    this.videoElement.style.cssText = `
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1);
-      opacity: 0; /* Hidden initially */
-      transition: opacity 0.5s ease;
-    `;
-    this.container.appendChild(this.videoElement);
 
     // Set container styles
     this.container.style.cssText = `
@@ -387,7 +369,7 @@ export class App {
     this.showLandingPage();
   }
 
-  private updateHandStatus(handCount: number): void {
+  private updateInputStatus(state: InputState): void {
     if (this.currentMode === null) return;
 
     if (this.currentMode === 'cosmic-slash' && this.cosmicSlashController) {
@@ -397,23 +379,10 @@ export class App {
       }
     }
 
-    // Only show hand detection status if debug mode is enabled
-    // This reduces visual clutter during normal usage
-    const isDebug = this.debugComponent?.isVisibleState() ?? false;
-    if (!isDebug) {
-      this.statusIndicator?.hide();
-      return;
-    }
+    const sourceLabel = state.source === 'mudra' ? 'Mudra' : 'Fallback (KB/Mouse)';
+    const status = state.connected ? 'active' : 'ready';
 
-    if (handCount <= 0) {
-      this.updateStatus('No hands detected', 'ready');
-      return;
-    }
-    if (handCount === 1) {
-      this.updateStatus('1 hand detected', 'active');
-      return;
-    }
-    this.updateStatus(`${handCount} hands detected`, 'active');
+    this.updateStatus(`Mode: ${this.currentMode} | Source: ${sourceLabel}`, status);
   }
 
   /**
@@ -558,30 +527,25 @@ export class App {
       // Update FPS counter
       this.fpsCounter.update();
 
-      // Update controller based on current mode
-      if (this.currentMode === 'galaxy') {
-        this.controller?.update(timestamp);
+      // Get unified input state
+      const inputState = this.inputManager.getState();
+      this.updateInputStatus(inputState);
 
-        const handCount = this.controller?.getHandCount() ?? 0;
-        this.updateHandStatus(handCount);
+      // Update controllers with new input state
+      if (this.currentMode === 'galaxy') {
+        this.controller?.update(timestamp, inputState);
       } else if (this.currentMode === 'foggy-mirror') {
-        const handCount = this.foggyMirrorController?.getHandCount() ?? 0;
-        this.updateHandStatus(handCount);
+        this.foggyMirrorController?.update(timestamp, inputState);
       } else if (this.currentMode === 'cosmic-slash') {
-        const handCount = this.cosmicSlashController?.getHandCount() ?? 0;
-        this.updateHandStatus(handCount);
+        this.cosmicSlashController?.update(timestamp, inputState);
       } else if (this.currentMode === 'iron-man-workshop') {
-        const handCount = this.workshopController?.getHandCount() ?? 0;
-        this.updateHandStatus(handCount);
+        this.workshopController?.update(timestamp, inputState);
       } else if (this.currentMode === 'stellar-wave') {
-        const handCount = this.stellarWaveController?.getHandCount() ?? 0;
-        this.updateHandStatus(handCount);
+        this.stellarWaveController?.update(timestamp, inputState);
       } else if (this.currentMode === 'light-bulb') {
-        const handCount = this.lightBulbController?.getHandCount() ?? 0;
-        this.updateHandStatus(handCount);
+        this.lightBulbController?.update(timestamp, inputState);
       } else if (this.currentMode === 'magnetic-clutter') {
-        const handCount = this.magneticClutterController?.getHandCount() ?? 0;
-        this.updateHandStatus(handCount);
+        this.magneticClutterController?.update(timestamp, inputState);
       }
       // Note: foggy-mirror mode has its own update loop in FoggyMirrorController
 
@@ -719,7 +683,7 @@ export class App {
 
     // Initialize controller if needed
     if (!this.controller) {
-      this.controller = new HandGalaxyController(this.handTracker, this.galaxyRenderer);
+      this.controller = new HandGalaxyController(this.inputManager, this.galaxyRenderer);
       this.controller.initializeEffects(this.galaxyRenderer.getScene());
     }
 
@@ -741,9 +705,9 @@ export class App {
     // Start loop
     this.startAnimationLoop();
 
-    // Show camera permission banner if camera is not enabled
-    if (!this.handTracker.isCameraEnabled()) {
-      this.cameraPermissionBanner?.show('galaxy');
+    // Show status if not connected
+    if (!this.inputManager.isConnected()) {
+      this.updateStatus('Mode: Galaxy | Waiting for input...', 'loading');
     }
 
     // Re-enable debug if it was active
@@ -765,7 +729,7 @@ export class App {
 
     if (!this.magneticClutterController) {
       this.magneticClutterController = new MagneticClutterController(
-        this.handTracker,
+        this.inputManager,
         this.container,
         { debug: this.config.debug }
       );
@@ -786,8 +750,8 @@ export class App {
 
     this.startAnimationLoop();
 
-    if (!this.handTracker.isCameraEnabled()) {
-      this.cameraPermissionBanner?.show('magnetic-clutter');
+    if (!this.inputManager.isConnected()) {
+      // this.cameraPermissionBanner?.show('magnetic-clutter');
     }
 
     if (this.debugComponent?.isVisibleState()) {
@@ -813,7 +777,7 @@ export class App {
 
     // Initialize foggy mirror controller if needed
     if (!this.foggyMirrorController) {
-      this.foggyMirrorController = new FoggyMirrorController(this.handTracker, this.container, {
+      this.foggyMirrorController = new FoggyMirrorController(this.inputManager, this.container, {
         debug: this.config.debug,
       });
       this.foggyMirrorController.initialize();
@@ -840,9 +804,8 @@ export class App {
     // Start loop (for FPS and status, though foggy mirror has its own loop)
     this.startAnimationLoop();
 
-    // Show camera permission banner if camera is not enabled
-    if (!this.handTracker.isCameraEnabled()) {
-      this.cameraPermissionBanner?.show('foggy-mirror');
+    if (!this.inputManager.isConnected()) {
+      // ...
     }
 
     // Re-enable debug if it was active
@@ -887,7 +850,7 @@ export class App {
     // Initialize cosmic slash controller if needed
     if (!this.cosmicSlashController) {
       this.updateStatus('Loading Cosmic Slash...', 'loading');
-      this.cosmicSlashController = new CosmicSlashController(this.handTracker, this.container, {
+      this.cosmicSlashController = new CosmicSlashController(this.inputManager, this.container, {
         debug: this.config.debug,
       });
       this.cosmicSlashController.initialize();
@@ -914,9 +877,8 @@ export class App {
     // Start loop
     this.startAnimationLoop();
 
-    // Show camera permission banner if camera is not enabled
-    if (!this.handTracker.isCameraEnabled()) {
-      this.cameraPermissionBanner?.show('cosmic-slash');
+    if (!this.inputManager.isConnected()) {
+      // ...
     }
 
     // Re-enable debug if it was active
@@ -942,7 +904,7 @@ export class App {
     // Initialize workshop controller if needed
     if (!this.workshopController) {
       this.updateStatus('Loading Workshop...', 'loading');
-      this.workshopController = new WorkshopController(this.handTracker, this.container, {
+      this.workshopController = new WorkshopController(this.inputManager, this.container, {
         debug: this.config.debug,
       });
       this.workshopController.initialize();
@@ -969,9 +931,8 @@ export class App {
     // Start loop
     this.startAnimationLoop();
 
-    // Show camera permission banner if camera is not enabled
-    if (!this.handTracker.isCameraEnabled()) {
-      this.cameraPermissionBanner?.show('iron-man-workshop');
+    if (!this.inputManager.isConnected()) {
+      // ...
     }
 
     // Re-enable debug if it was active
@@ -1013,7 +974,7 @@ export class App {
     // Initialize stellar wave controller if needed
     if (!this.stellarWaveController) {
       this.updateStatus('Loading Stellar Wave...', 'loading');
-      this.stellarWaveController = new StellarWaveController(this.handTracker, this.container);
+      this.stellarWaveController = new StellarWaveController(this.inputManager, this.container);
       this.stellarWaveController.initialize();
     }
 
@@ -1037,9 +998,8 @@ export class App {
     // Start loop
     this.startAnimationLoop();
 
-    // Show camera permission banner if camera is not enabled
-    if (!this.handTracker.isCameraEnabled()) {
-      this.cameraPermissionBanner?.show('stellar-wave');
+    if (!this.inputManager.isConnected()) {
+      // ...
     }
 
     // Re-enable debug if it was active
@@ -1083,7 +1043,7 @@ export class App {
     // Initialize light bulb controller if needed
     if (!this.lightBulbController) {
       this.updateStatus('Loading Light Bulb...', 'loading');
-      this.lightBulbController = new LightBulbController(this.handTracker, this.container, {
+      this.lightBulbController = new LightBulbController(this.inputManager, this.container, {
         debug: this.config.debug,
       });
       this.lightBulbController.initialize();
@@ -1178,8 +1138,8 @@ export class App {
     this.workshopController?.dispose();
     this.stellarWaveController?.dispose();
     this.lightBulbController?.dispose();
+    this.lightBulbController?.dispose();
     this.magneticClutterController?.dispose();
-    this.handTracker.dispose();
     this.galaxyRenderer?.dispose();
     this.deviceBanner?.dispose();
     this.cameraPermissionBanner?.dispose();
